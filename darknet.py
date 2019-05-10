@@ -8,15 +8,6 @@ import numpy as np
 from util import *
 
 
-def get_test_input():
-    img = cv2.imread("dog-cycle-car.png")
-    img = cv2.resize(img, (416,416))          #Resize to the input dimension
-    img_ =  img[:,:,::-1].transpose((2,0,1))  # BGR -> RGB | H X W C -> C X H X W
-    img_ = img_[np.newaxis,:,:,:]/255.0       #Add a channel at 0 (for batch) | Normalise
-    img_ = torch.from_numpy(img_).float()     #Convert to float
-    img_ = Variable(img_)                     # Convert to Variable
-    return img_
-
 def parse_cfg(cfgfile):
     """
     Takes a configuration file
@@ -197,7 +188,6 @@ class Darknet(nn.Module):
                     map2 = outputs[i + layers[1]]
                     x = torch.cat((map1, map2), 1)
 
-
             elif  module_type == "shortcut":
                 from_ = int(module["from"])
                 x = outputs[i-1] + outputs[i+from_]
@@ -216,14 +206,11 @@ class Darknet(nn.Module):
                 if not write:              #if no collector has been intialised.
                     detections = x
                     write = 1
-
                 else:
                     detections = torch.cat((detections, x), 1)
 
             outputs[i] = x
-
         return detections
-
 
     def load_weights(self, weightfile):
         #Open the weights file

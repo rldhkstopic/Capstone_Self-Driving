@@ -67,12 +67,14 @@ def write(x, results):
     cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font, 1, [225,255,255], 1);
     return image
 
-print("Now Loading the video..")
+def show_fps(image, frames, start):
+    now_fps = round(frames / (time.time() - start),2)
+    print("Now FPS is {0}".format(now_fps))
+
 frames = 0
 start = time.time()
 cap = cv2.VideoCapture(video)
 # clip1 = save_video('out_videos/detected_' + image_name)
-print("Success!")
 while cap.isOpened():
     ret, frame = cap.read()
     if ret:
@@ -122,7 +124,6 @@ while cap.isOpened():
         if key & 0xFF == ord('q'):
             break
         frames += 1
-        now_fps = round(frames / (time.time() - start),2)
-        print("Now FPS is {0}".format(now_fps))
+        show_fps(frame, frames, start)
     else:
         break
