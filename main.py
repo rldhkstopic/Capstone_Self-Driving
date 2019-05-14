@@ -312,21 +312,24 @@ obed = [890, 570]
 def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
+    centx = int((c1[0]+c2[0])/2)
+    centy = int((c1[1]+c2[1])/2)
     cls = int(x[-1]) # 마지막 Index
 
     image = results
     label = "{0}".format(classes[cls])
     cnt = 0
-    if obst[0] < c1[0] < obed[0] and obst[1] < c1[1] < obed[1]\
-        and obst[0] < c2[0] < obed[0] and obst[1] < c2[1] < obed[1]:
-        if cls == 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motobike)
-            if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
-                cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
-                t_size = cv2.getTextSize(label, font2, 1, 1)[0]
-                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-                # cv2.rectangle(image, c1, c2, white, -1)
-                cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
+    # if obst[0] < c1[0] < obed[0] and obst[1] < c1[1] < obed[1]\
+    #     and obst[0] < c2[0] < obed[0] and obst[1] < c2[1] < obed[1]:
+    if cls == 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motobike)
+        if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
+            cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
+            cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
 
+            t_size = cv2.getTextSize(label, font2, 1, 1)[0]
+            c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+                # cv2.rectangle(image, c1, c2, white, -1)
+            cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
     return image
 
 
@@ -343,7 +346,7 @@ video = image_directory + image_name
 """--------------------------Video test--------------------------------------"""
 start = 0
 batch_size = 1
-confidence = 0.7 # 신뢰도
+confidence = 0.8 # 신뢰도
 nms_thesh = 0.4
 resol = 416 # 해상도
 
@@ -377,12 +380,12 @@ while (cap.isOpened()):
     ret, frame = cap.read()
     if ret:
         cv2.rectangle(frame, (0,0), (400, 130), dark, -1) # Lane Detection ROI
-        cv2.rectangle(frame, tuple(obst), tuple(obed), yellow, 1) # Object Detection ROI
+        # cv2.rectangle(frame, tuple(obst), tuple(obed), yellow, 1) # Object Detection ROI
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame, flags)
 
-        cpframe = frame.copy()
-        zero_frame = np.zeros_like(frame)
+        cpframe = frame.copy() # Lane frame copy
+        zero_frame = np.zeros_like(frame) # Object frame zero copy
 
         prc_img = process_image(cpframe)
         lane_detection = visualize(prc_img)
@@ -423,10 +426,10 @@ while (cap.isOpened()):
 
         cnt = 0 # Car count
         for x in output:
-            if obst[0] < tuple(x[1:3].int())[0] < obed[0] and obst[1] < tuple(x[1:3].int())[1] < obed[1]\
-                and obst[0] < tuple(x[3:5].int())[0] < obed[0] and obst[1] < tuple(x[3:5].int())[1] < obed[1]:
-                    if int(x[-1]) == 2 or 3 or 5 or 7: cnt += 1
-        cv2.putText(frame, 'car count : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
+            # if obst[0] < tuple(x[1:3].int())[0] < obed[0] and obst[1] < tuple(x[1:3].int())[1] < obed[1]\
+            #     and obst[0] < tuple(x[3:5].int())[0] < obed[0] and obst[1] < tuple(x[3:5].int())[1] < obed[1]:
+            if int(x[-1]) == 2 or 3 or 5 or 7: cnt += 1
+        cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
 
         object_result = cv2.add(frame, zero_frame)
         lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
