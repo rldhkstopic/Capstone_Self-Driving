@@ -1,8 +1,10 @@
 from __future__ import division
 from torch.autograd import Variable
+from torch.cuda import FloatTensor
 from darknet import Darknet
 from moviepy.editor import VideoFileClip
 from scipy.misc import imresize
+from PIL import Image
 
 import numpy as np
 import os
@@ -176,6 +178,7 @@ def get_pts(flag=0):
                 [670, 460],
                 [1050, 650]
                 ])
+
     vertices2 = np.array([
                 [110, 690],
                 [600, 350],
@@ -188,19 +191,20 @@ def get_pts(flag=0):
 hei = 25
 font_size = 1
 def warning_text(image, flag): # Information Box
+    m = 2
     if flag == 0:
-        cv2.putText(image, 'WARNING : ', (10, hei*2), font, 0.8, white, font_size)
-        cv2.putText(image, 'None', (160, hei*2), font, 0.8, white, font_size)
+        cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, white, font_size)
+        cv2.putText(image, 'None', (160, hei*m), font, 0.8, white, font_size)
     elif flag == 1:
-        cv2.putText(image, 'WARNING : ', (10, hei*2), font, 0.8, red, font_size)
-        cv2.putText(image, 'Turn Right', (160, hei*2), font, 0.8, red, font_size)
+        cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
+        cv2.putText(image, 'Turn Right', (160, hei*m), font, 0.8, red, font_size)
     elif flag == 2:
-        cv2.putText(image, 'WARNING : ', (10, hei*2), font, 0.8, red, font_size)
-        cv2.putText(image, 'Turn Left', (160, hei*2), font, 0.8, red, font_size)
+        cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
+        cv2.putText(image, 'Turn Left', (160, hei*m), font, 0.8, red, font_size)
 
 def show_fps(image, frames, start, color = white):
     now_fps = round(frames / (time.time() - start), 2)
-    cv2.putText(image, "FPS : %.2f"%now_fps, (10, hei), font, 1, color, font_size)
+    cv2.putText(image, "FPS : %.2f"%now_fps, (10, hei), font, 0.8, color, font_size)
 
 def std_line(image, height, whalf, color = yellow):
     cv2.line(image, (whalf, lane_center[1]), (whalf, int(height)), color, 2)
@@ -215,10 +219,9 @@ def lane_position(image, length=30, thickness=3, color = red):
     cv2.line(image, (r_center[0], r_center[1]), (r_center[0], r_center[1]-length), color, thickness)
     cv2.line(image, (lane_center[0], lane_center[1]), (lane_center[0], lane_center[1]-length), color, thickness)
 
-#####################
-""" Processing Image """
 flg = 0 # ROI 설정
 lower_white = 100
+""" Image processing to detect the lanes """
 def process_image(image):
     global first_frame
 
@@ -262,8 +265,12 @@ def process_image(image):
 
     return result
 
+flags = 0
+""" Visualize the information of lane detection """
 def visualize(image):
+    global flags
     height, width = image.shape[:2]
+
     zeros = np.zeros_like(image)
     vertices = [get_pts(flag=flg)]
     pts = get_lane_pts()
@@ -272,7 +279,6 @@ def visualize(image):
     hhalf = int(height/2)
     # ptsl = tuple(tuple(pts))
 
-    flag = 0
     if not lane_center[1] < hhalf:
         gap = 10
         max = 100 # 410 ~ 760
@@ -284,37 +290,44 @@ def visualize(image):
             cv2.line(zeros, (next_frame[6], next_frame[7]), (next_frame[4], next_frame[5]), red, 3)
 
             std_line(zeros, height = height, whalf = whalf)# Standard Line
-            warning_line(zeros, gap = gap, whalf = whalf) # Warning Boundary
             lane_position(zeros) # Lane Position
+            warning_line(frame, gap = gap, whalf = whalf) # Warning Boundary
 
-            if lane_center[0] < whalf-gap : flag = 1
-            elif lane_center[0] > whalf+gap : flag = 2
-            else : flag = 0
+            if lane_center[0] < whalf-gap : flags = 1
+            elif lane_center[0] > whalf+gap : flags = 2
+            else : flags = 0
 
     # ROI
     cv2.putText(zeros, 'ROI', (930, 650), font, 0.8, yellow, font_size)
     cv2.polylines(zeros, vertices, True, (0, 255, 255))
 
-    warning_text(zeros, flag)
     return zeros
 
 
-######################
-def write(x, results, color = [126, 232, 229], font_color = dark):
+#object detection start and end point
+obst = [395, 380]
+obed = [890, 570]
+
+""" Visualize the information of object detection """
+def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
-    cls = int(x[-1])
+    cls = int(x[-1]) # 마지막 Index
 
     image = results
     label = "{0}".format(classes[cls])
-    if not abs(c1[0]-c2[0]) > 1000:    # 과도한 Boxing 제외
-        cv2.rectangle(image, c1, c2, color, 1)
 
-    t_size = cv2.getTextSize(label, font2, 1 , 1)[0]
-    c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+    if obst[0] < c1[0] < obed[0] and obst[1] < c1[1] < obed[1]\
+        and obst[0] < c2[0] < obed[0] and obst[1] < c2[1] < obed[1]  :
+        if 'car' or 'truck' or 'people' or 'bus' or 'motorbike' in label: # 인식할 Vehicles를 지정
+            if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
+                cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
+                t_size = cv2.getTextSize(label, font2, 1, 1)[0]
+                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
 
-    cv2.rectangle(image, c1, c2, color, -1)
-    cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1);
+                # cv2.rectangle(image, c1, c2, white, -1)
+                cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
+
     return image
 
 
@@ -331,16 +344,16 @@ video = image_directory + image_name
 """--------------------------Video test--------------------------------------"""
 start = 0
 batch_size = 1
-confidence = 0.5
+confidence = 0.7 # 신뢰도
 nms_thesh = 0.4
 resol = 416 # 해상도
 
-num_classes = 80
-print("Reading <configure> file..")
+num_classes = 12
+print("Reading configure file")
 model = Darknet(cfg)
-print("Reading < weights > file..")
+print("Reading weights file")
 model.load_weights(weights)
-print("Reading < classes > file..")
+print("Reading classes file")
 classes = load_classes(names)
 
 print("\nNetwork successfully loaded!")
@@ -364,51 +377,59 @@ cap = cv2.VideoCapture(video)
 while (cap.isOpened()):
     ret, frame = cap.read()
     if ret:
-        # Lane Detection and Region of Lane mask
-        cv2.rectangle(frame, (0,0), (400, 130), dark, -1)
+        cv2.rectangle(frame, (0,0), (400, 130), dark, -1) # Lane Detection ROI
+        cv2.rectangle(frame, tuple(obst), tuple(obed), yellow, 1) # Object Detection ROI
+        show_fps(frame, frames, start, color = yellow)
+        warning_text(frame, flags)
+
         cpframe = frame.copy()
+        zero_frame = np.zeros_like(frame)
+
         prc_img = process_image(cpframe)
         lane_detection = visualize(prc_img)
 
-        # YOLO, Object Detection
-        # prep_frame = prep_image(frame, input_dim)
-        # frame_dim = frame.shape[1], frame.shape[0]
-        # frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
-        #
-        # if CUDA:
-        #     frame_dim = frame_dim.cuda()
-        #     prep_frame = prep_frame.cuda()
-        #
-        # with torch.no_grad():
-        #     output = model(Variable(prep_frame, True), CUDA)
-        # output = write_results(output, confidence, num_classes, nms_thesh)
-        #
-        # if type(output) == int:
-        #     frames += 1
-        #     cv2.imshow("Frame", frame)
-        #
-        #     key = cv2.waitKey(1)
-        #     if key & 0xFF == ord('q'):
-        #         break
-        #     continue
-        #
-        # frame_dim = frame_dim.repeat(output.size(0), 1)
-        # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
-        #
-        # output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
-        # output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
-        # output[:, 1 : 5] /= scaling_factor
-        #
-        # for i in range(output.shape[0]):
-        #     output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
-        #     output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
-        #
+        prep_frame = prep_image(frame, input_dim)
+        frame_dim = frame.shape[1], frame.shape[0]
+        frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+
+        if CUDA:
+            frame_dim = frame_dim.cuda()
+            prep_frame = prep_frame.cuda()
+
+        with torch.no_grad():
+            output = model(Variable(prep_frame, True), CUDA)
+        output = write_results(output, confidence, num_classes, nms_thesh)
+
+        if type(output) == int:
+            frames += 1
+            cv2.imshow("Frame", frame)
+
+            key = cv2.waitKey(1)
+            if key & 0xFF == ord('q'):
+                break
+            continue
+
+        frame_dim = frame_dim.repeat(output.size(0), 1)
+        scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
+
+        output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
+        output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
+        output[:, 1:5] /= scaling_factor
+
+        for i in range(output.shape[0]):
+            output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
+            output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
+
+        list(write(x, zero_frame) for x in output)
         # list(map(lambda x: write(x, frame), output))
 
-        result = cv2.addWeighted(frame, 1, lane_detection, 0.7, 0)
-        show_fps(result, frames, start, color = yellow)
+        object_result = cv2.add(frame, zero_frame)
+        # object_result = cv2.addWeighted(frame, 1, zero_frame, 1, 0)
+        lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
+        # show_fps(lane_result, frames, start, color = yellow)
 
-        cv2.imshow("Result", result)
+        cv2.imshow("Result", lane_result)
+
         # clip1.write(result)
         frames += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):

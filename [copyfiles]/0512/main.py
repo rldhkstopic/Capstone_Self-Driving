@@ -215,10 +215,9 @@ def lane_position(image, length=30, thickness=3, color = red):
     cv2.line(image, (r_center[0], r_center[1]), (r_center[0], r_center[1]-length), color, thickness)
     cv2.line(image, (lane_center[0], lane_center[1]), (lane_center[0], lane_center[1]-length), color, thickness)
 
-#####################
-""" Processing Image """
 flg = 0 # ROI 설정
 lower_white = 100
+""" Image processing to detect the lanes """
 def process_image(image):
     global first_frame
 
@@ -262,6 +261,7 @@ def process_image(image):
 
     return result
 
+""" Visualize the information of lane detection """
 def visualize(image):
     height, width = image.shape[:2]
     zeros = np.zeros_like(image)
@@ -298,12 +298,11 @@ def visualize(image):
     warning_text(zeros, flag)
     return zeros
 
-
-######################
+""" Visualize the information of object detection """
 def write(x, results, color = [126, 232, 229], font_color = dark):
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
-    cls = int(x[-1])
+    cls = int(x[-1]) # 마지막 Index
 
     image = results
     label = "{0}".format(classes[cls])
@@ -335,7 +334,7 @@ confidence = 0.5
 nms_thesh = 0.4
 resol = 416 # 해상도
 
-num_classes = 80
+num_classes = 12
 print("Reading <configure> file..")
 model = Darknet(cfg)
 print("Reading < weights > file..")
@@ -371,39 +370,40 @@ while (cap.isOpened()):
         lane_detection = visualize(prc_img)
 
         # YOLO, Object Detection
-        # prep_frame = prep_image(frame, input_dim)
-        # frame_dim = frame.shape[1], frame.shape[0]
-        # frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
-        #
-        # if CUDA:
-        #     frame_dim = frame_dim.cuda()
-        #     prep_frame = prep_frame.cuda()
-        #
-        # with torch.no_grad():
-        #     output = model(Variable(prep_frame, True), CUDA)
-        # output = write_results(output, confidence, num_classes, nms_thesh)
-        #
-        # if type(output) == int:
-        #     frames += 1
-        #     cv2.imshow("Frame", frame)
-        #
-        #     key = cv2.waitKey(1)
-        #     if key & 0xFF == ord('q'):
-        #         break
-        #     continue
-        #
-        # frame_dim = frame_dim.repeat(output.size(0), 1)
-        # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
-        #
-        # output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
-        # output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
-        # output[:, 1 : 5] /= scaling_factor
-        #
-        # for i in range(output.shape[0]):
-        #     output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
-        #     output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
-        #
-        # list(map(lambda x: write(x, frame), output))
+        prep_frame = prep_image(frame, input_dim)
+        frame_dim = frame.shape[1], frame.shape[0]
+        frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+
+        if CUDA:
+            frame_dim = frame_dim.cuda()
+            prep_frame = prep_frame.cuda()
+
+        with torch.no_grad():
+            output = model(Variable(prep_frame, True), CUDA)
+        output = write_results(output, confidence, num_classes, nms_thesh)
+
+        if type(output) == int:
+            frames += 1
+            cv2.imshow("Frame", frame)
+
+            key = cv2.waitKey(1)
+            if key & 0xFF == ord('q'):
+                break
+            continue
+
+        frame_dim = frame_dim.repeat(output.size(0), 1)
+        scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
+
+        output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
+        output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
+        output[:, 1 : 5] /= scaling_factor
+
+        for i in range(output.shape[0]):
+            output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
+            output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
+
+
+        list(map(lambda x: write(x, frame), output))
 
         result = cv2.addWeighted(frame, 1, lane_detection, 0.7, 0)
         show_fps(result, frames, start, color = yellow)
