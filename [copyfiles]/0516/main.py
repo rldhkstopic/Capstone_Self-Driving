@@ -12,7 +12,6 @@ import io
 import cv2
 import math
 import pickle
-import argparse
 import time
 import serial
 from util import *
@@ -303,37 +302,9 @@ def visualize(image):
             warning_baseline(zeros, height = height, whalf = whalf)
             safety_baseline(frame, gap = gap, whalf = whalf)
 
-
-            if lane_center[0] < whalf-gap :
-                flags = 1
-                value = whalf - lane_center[0] - gap
-                if mcu_port:
-                    mcu.write([value])
-
-            elif lane_center[0] > whalf+gap :
-                flags = 2
-                value = lane_center[0] - whalf - gap + 100
-                if mcu_port:
-                    mcu.write([value])
-
-            else :
-                flags = 0
-                value = 0
-                if mcu_port:
-                    mcu.write([value])
-
-            print(value)
-            # if mcu_port:
-            #     if flags == 1 :
-            #         mcu.write([value])
-            #     elif flags == 2 :
-            #         mcu.write([value])
-                # elif flags == 0 :
-                #     mcu.write([0])
-                # print(value)
-                # if mcu.readable():
-                    # res = mcu.readline()
-                    # print(res.decode()[:len(res)-1])
+            if lane_center[0] < whalf-gap : flags = 1
+            elif lane_center[0] > whalf+gap : flags = 2
+            else : flags = 0
 
     # ROI
     cv2.putText(zeros, 'ROI', (930, 650), font, 0.8, yellow, font_size)
@@ -343,33 +314,39 @@ def visualize(image):
 
 def frontcar(image):
     height, width = image.shape[:2]
-    zeros = np.zeros_like(image)
     whalf = int(width/2)
     hhalf = int(height/2)
 
-    gap = 15
-    max = 100
-    if not lane_center[1] < hhalf:
-        if r_center[0]-l_center[0] > max:
-            cv2.fillPoly(zeros, [get_lane_pts()], white)
-            cv2.rectangle(zeros, (next_frame[0], 0), (next_frame[4], next_frame[5]), white, -1)
-            # xor_zeros = cv2.bitwise_xor(limes, cent)
-    return zeros
+    zeros = np.zeros_like(image)
+    pts = get_lane_pts()
+    image = results
+    label = "{0}".format(classes[cls])
 
-# def handling():
-#     if whalf - lane_center[0]:
+    gap = 15
+    max = 100 # 410 ~ 760
+    if cls == 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motobike)
+        if not abs(c1[0]-c2[0]) > 1000:
+            if not lane_center[1] < hhalf:
+                if r_center[0]-l_center[0] > max:
+                    limes = cv2.fillPoly(zeros, [pts], lime)
+                    cv2.circle(limes, (centx, centy), 3, blue, -1) # Detected vehicles' center
 
 #object detection start and end point
+obst = [395, 380]
+obed = [890, 570]
+
+centx, centy = 0, 0
 """ Visualize the information of object detection """
 def write(x, results, color = [126, 232, 229], font_color = red): # x = output
+    global centx, centy
+
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
     cls = int(x[-1]) # 마지막 Index
 
     image = results
     label = "{0}".format(classes[cls])
-
-    if cls == 2 or cls==3 or cls == 5 or cls == 7:#not 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motorbike)
+    if cls == 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motobike)
         if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
             centx = int((c1[0]+c2[0])/2)
             centy = int((c1[1]+c2[1])/2)
@@ -383,25 +360,18 @@ def write(x, results, color = [126, 232, 229], font_color = red): # x = output
             cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
     return image
 
+
 """------------------------Data Directory------------------------------------"""
 cfg = "cfg/yolov3.cfg"
 weights = "weights/yolov3.weights"
 names = "data/coco.names"
 
-image_name = "drive3.mp4"
+image_name = "Drive.mp4"
 image_directory = "test_videos/"
 video = image_directory + image_name
 
-def arg_parse():
-    parses = argparse.ArgumentParser(description='My capstone Design 2019')
-    parses.add_argument("--video", dest = 'video', default = video, type = str)
-    parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
-    parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
-    return parses.parse_args()
 
 """--------------------------Changeable Variables----------------------------"""
-args = arg_parse()
-
 frames = 0
 first_frame = 1
 
@@ -420,16 +390,11 @@ print("Reading classes file")
 classes = load_classes(names)
 print("\nNetwork successfully loaded!")
 
-
-mcu_port = args.com
-mcu_brate = args.brate # Baud rate
-if mcu_port:
-    mcu = serial.Serial(mcu_port, mcu_brate, timeout = 1)
-    mcu.timeout = None
+# mcu_port = 'COM' + '4'
+# mcu = serial.Serial(mcu_port)
 
 # clip1 = save_video('out_videos/lane_' + image_name) # result 영상 저장
 """--------------------------Video test--------------------------------------"""
-
 model.net_info["height"] = resol
 input_dim = int(model.net_info["height"])
 assert input_dim % 32 == 0, "Set the Input resolution which can divide into 32 parts"
@@ -442,23 +407,22 @@ model.eval()
 
 start = time.time()
 
-cap = cv2.VideoCapture(args.video)
+cap = cv2.VideoCapture(video)
 print("\nVideo is now ready to show.")
 while (cap.isOpened()):
     ret, frame = cap.read()
     if ret:
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1) # Lane Detection ROI
-
+        # cv2.rectangle(frame, tuple(obst), tuple(obed), yellow, 1) # Object Detection ROI
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame, flags)
 
         cpframe = frame.copy() # Lane frame copy
+        zero_frame = np.zeros_like(frame) # Object frame zero copy
 
-        """ Lane Detection """
         prc_img = process_image(cpframe)
         lane_detection = visualize(prc_img)
-
-        """ Object Detection """
+        #
         # prep_frame = prep_image(frame, input_dim)
         # frame_dim = frame.shape[1], frame.shape[0]
         # frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
@@ -471,14 +435,14 @@ while (cap.isOpened()):
         #     output = model(Variable(prep_frame, True), CUDA)
         # output = write_results(output, confidence, num_classes, nms_thesh)
         #
-        # # if type(output) == int:
-        # #     frames += 1
-        # #     # cv2.imshow("Frame", frame)
-        # #
-        # #     key = cv2.waitKey(1)
-        # #     if key & 0xFF == ord('q'):
-        # #         break
-        # #     continue
+        # if type(output) == int:
+        #     frames += 1
+        #     # cv2.imshow("Frame", frame)
+        #
+        #     key = cv2.waitKey(1)
+        #     if key & 0xFF == ord('q'):
+        #         break
+        #     continue
         #
         # frame_dim = frame_dim.repeat(output.size(0), 1)
         # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
@@ -491,19 +455,19 @@ while (cap.isOpened()):
         #     output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
         #     output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
         #
-        # zero_frame = np.zeros_like(frame) # Object frame zero copy
         # list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
         #
         # cnt = 0 # Car count
         # for x in output:
-        #     if int(x[-1]) == 2 or int(x[-1]) == 3 or int(x[-1]) == 5 or int(x[-1]) == 7: cnt += 1
+        #     # if obst[0] < tuple(x[1:3].int())[0] < obed[0] and obst[1] < tuple(x[1:3].int())[1] < obed[1]\
+        #     #     and obst[0] < tuple(x[3:5].int())[0] < obed[0] and obst[1] < tuple(x[3:5].int())[1] < obed[1]:
+        #     if int(x[-1]) == 2 or 3 or 5 or 7: cnt += 1
         # cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
         #
         # object_result = cv2.add(frame, zero_frame)
         # lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
         lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
 
-        # cv2.imshow("rr", zeros)
         cv2.imshow("Result", lane_result)
         # clip1.write(lane_result)
         frames += 1

@@ -9,14 +9,6 @@ from util import *
 
 
 def parse_cfg(cfgfile):
-    """
-    Takes a configuration file
-
-    Returns a list of blocks. Each blocks describes a block in the neural
-    network to be built. Block is represented as a dictionary in the list
-
-    """
-
     file = open(cfgfile, 'r')
     lines = file.read().split('\n')                        # store the lines in a list
     lines = [x for x in lines if len(x) > 0]               # get read of the empty lines
