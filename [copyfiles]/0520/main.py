@@ -10,12 +10,12 @@ import numpy as np
 import os
 import io
 import cv2
+import math
 import pafy
 import pickle
 import argparse
 import time
 import serial
-from math import *
 from util import *
 
 # Color
@@ -35,7 +35,6 @@ font2 = cv2.FONT_HERSHEY_PLAIN
 
 # Global 함수 초기화
 l_pos, r_pos, l_cent, r_cent = 0, 0, 0, 0
-uxhalf, uyhalf, dxhalf, dyhalf = 0, 0, 0, 0
 l_center, r_center, lane_center = ((0, 0)), ((0, 0)), ((0, 0))
 next_frame = (0, 0, 0, 0, 0, 0, 0, 0)
 
@@ -158,15 +157,9 @@ def draw_lines(img, lines):
     r_center = (int((next_frame[4] + next_frame[6]) / div), int((next_frame[5] + next_frame[7]) / div))
     lane_center = (int((l_center[0] + r_center[0]) / div), int((l_center[1] + r_center[1]) / div))
 
-    global uxhalf, uyhalf, dxhalf, dyhalf
-    uxhalf = int((next_frame[2]+next_frame[6])/2)
-    uyhalf = int((next_frame[3]+next_frame[7])/2)
-    dxhalf = int((next_frame[0]+next_frame[4])/2)
-    dyhalf = int((next_frame[1]+next_frame[5])/2)
-
     cache = next_frame
 
-def lane_pts():
+def get_lane_pts():
     pts = np.array([[next_frame[0], next_frame[1]], [next_frame[2], next_frame[3]], [next_frame[6], next_frame[7]], [next_frame[4], next_frame[5]]], np.int32)
     pts = pts.reshape((-1, 1, 2))
     return pts
@@ -198,51 +191,70 @@ def get_pts(flag=0):
     if flag is 1 : return vertices2
 
 hei = 25
+posgap = 0
 font_size = 1
 def warning_text(image): # Information Box
-    whalf, height = 640, 720
+    l_pos = (l_cent - l_center[0])
+    r_pos = (r_cent - r_center[0])
 
-    angle = int(round(atan((dxhalf-(whalf-5))/120) * 180/np.pi)) * 3
+    if l_pos > 50 : l_pos = 50
+    if r_pos > 50 : r_pos = 50
+    if l_pos < -50 : l_pos = -50
+    if r_pos < -50 : r_pos = -50
 
     m = 2
-    limit = 10
-    value = 0
-    if 90 > angle > limit :
+    limit = 20
+    cv2.putText(image, 'l_pos = {0}'.format(l_pos), (10, hei*3), font, 0.7, white, font_size)
+    cv2.putText(image, 'r_pos = {0}'.format(r_pos), (10, hei*4), font, 0.7, white, font_size)
+
+    # cv2.putText(image, 'posgap = {0}'.format(posgap), (10, hei*5), font, 0.7, white, font_size)
+
+    if l_pos > limit and -limit < r_pos :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
         cv2.putText(image, 'Turn Right', (160, hei*m), font, 0.8, red, font_size)
-        value = angle
-    elif angle > 90 :
-        angle = 90
+        value = int(((l_pos + r_pos) - 2*limit) / 2)
+        # if mcu_port:
+            # mcu.write([value])
 
-    if -90 < angle < limit:
+    if r_pos > limit and -limit < l_pos :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
         cv2.putText(image, 'Turn Left', (160, hei*m), font, 0.8, red, font_size)
-        value = -angle
-    elif angle < -90 :
-        angle = -90
+        value = int(((l_pos + r_pos) + 2*limit) / 2)
+        value = -value + 100
+        # if mcu_port:
+            # mcu.write([value])
 
-    elif angle == limit :
+    else :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, white, font_size)
         cv2.putText(image, 'None', (160, hei*m), font, 0.8, white, font_size)
         value = 0
+        # if mcu_port:
+            # mcu.write([value])
 
-    cv2.putText(image, 'angle = {0}'.format(angle), (10, hei*4), font, 0.7, white, font_size)
-    cv2.putText(image, 'value = {0}'.format(value), (10, hei*5), font, 0.7, white, font_size)
+    print(value)
 
-    if mcu_port:
-        mcu.write([value])
-    # print(value)
-    
-""" 현재 영상 프레임 표시 """
 def show_fps(image, frames, start, color = white):
     now_fps = round(frames / (time.time() - start), 2)
     cv2.putText(image, "FPS : %.2f"%now_fps, (10, hei), font, 0.8, color, font_size)
 
-""" Steering Wheel Control 시각화 """
 def direction_line(image, height, whalf, color = yellow):
+    uxhalf = int((next_frame[2]+next_frame[6])/2)
+    uyhalf = int((next_frame[3]+next_frame[7])/2)
+    dxhalf = int((next_frame[0]+next_frame[4])/2)
+    dyhalf = int((next_frame[1]+next_frame[5])/2)
+
     cv2.line(image, (whalf-5, height), (whalf-5, 600), white, 2) # 방향 제어 기준선
     cv2.line(image, (whalf-5, height), (dxhalf, 600), red, 2) # 핸들 방향 제어
     cv2.circle(image, (whalf-5, height), 120, white, 2)
+
+""" 경고 기준선 : 이 선이 안전 기준선을 넘어가면 위험 """
+def warning_baseline(image, height, whalf, color = yellow):
+    cv2.line(image, (whalf, lane_center[1]), (lane_center[0], lane_center[1]), color, 2)
+
+""" 안전 기준선 """
+def safety_baseline(image, whalf, gap, length=10, color = white):
+    cv2.line(image, (whalf-gap, lane_center[1]-length), (whalf-gap, lane_center[1]+length), color, 1)
+    cv2.line(image, (whalf+gap, lane_center[1]-length), (whalf+gap, lane_center[1]+length), color, 1)
 
 """ 왼쪽 차선, 오른쪽 차선, 그리고 차선의 중앙 지점 표시 """
 def lane_position(image, gap = 20, length=20, thickness=2, color = red, bcolor = white): # length는 선의 위쪽 방향으로의 길이
@@ -272,6 +284,7 @@ def lane_position(image, gap = 20, length=20, thickness=2, color = red, bcolor =
 def draw_lanes(image, thickness = 3, color = red):
     cv2.line(image, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), red, 3)
     cv2.line(image, (next_frame[6], next_frame[7]), (next_frame[4], next_frame[5]), red, 3)
+
 
 """ Image processing to detect the lanes """
 def process_image(image):
@@ -325,11 +338,13 @@ def visualize(image, flg):
 
     zeros = np.zeros_like(image)
     vertices = [get_pts(flag=flg)]
-    pts = lane_pts()
+    pts = get_lane_pts()
 
     gap = 25
     max = 100 # 410 ~ 760
     limit = 30
+    whalf = int(width/2)
+    hhalf = int(height/2)
     if not lane_center[1] < hhalf:
         """ 차선검출 영역 최대 길이 이상 지정 """
         if r_center[0]-l_center[0] > max:
@@ -360,7 +375,7 @@ def frontcar(image):
     max = 100
     if not lane_center[1] < hhalf:
         if r_center[0]-l_center[0] > max:
-            cv2.fillPoly(zeros, [lane_pts()], white)
+            cv2.fillPoly(zeros, [get_lane_pts()], white)
             cv2.rectangle(zeros, (next_frame[0], 0), (next_frame[4], next_frame[5]), white, -1)
             # xor_zeros = cv2.bitwise_xor(limes, cent)
     return zeros

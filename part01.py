@@ -135,9 +135,10 @@ def draw_lines(img, lines, color=[255, 0, 0], thickness=3):
 
     margin = 10
 
-    cv2.line(img, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), color, thickness)
-    cv2.line(img, (next_frame[4], next_frame[5]), (next_frame[6], next_frame[7]), color, thickness)
-    cv2.line(img, (next_frame[0], next_frame[1]), (next_frame[4], next_frame[5]), color, thickness)
+
+    cv2.line(img, (l_x1, l_y1), (l_x2, l_y2), color, thickness)
+    cv2.line(img, (r_x1, r_y1), (r_x2, r_y2), color, thickness)
+    # cv2.line(img, (next_frame[0], next_frame[1]), (next_frame[4], next_frame[5]), color, thickness)
     # cv2.polylines(img, [pts], True, (0, 255, 255), 2)
 
     cache = next_frame
@@ -179,7 +180,7 @@ def process_image(image):
     # upper_white = np.array([255, 255, 255], dtype = "uint8")
 
     mask_yellow = cv2.inRange(img_hsv, lower_yellow, upper_yellow)
-    mask_white = cv2.inRange(gray_image, 200, 255)
+    mask_white = cv2.inRange(gray_image, 150, 255)
 
     mask_yw = cv2.bitwise_or(mask_white, mask_yellow) # 흰색과 노란색의 영역을 합친다.
     mask_yw_image = cv2.bitwise_and(gray_image, mask_yw) # Grayscale로 변환한 원본 이미지에서 흰색과 노란색만 추출
@@ -200,12 +201,11 @@ def get_pts(image):
     height, width = image.shape[:2]
 
     vertices = np.array([
-                [( 0/12) * width, (7.0/7) * height],
-                [( 0/12) * width, (6.0/7) * height],
-                [( 5/12) * width, (4.0/7) * height], #기울기 1/2
-                [( 7/12) * width, (4.0/7) * height],
-                [(12/12) * width, (6.0/7) * height],
-                [(12/12) * width, (7.0/7) * height],], dtype = np.int32)
+                [230, 650],
+                [620, 460],
+                [670, 460],
+                [1050, 650]
+                ])
     return vertices
 
 def get_roi(image):
@@ -222,7 +222,7 @@ def add_lines(image):
     result = cv2.addWeighted(image, 1, lines, 1, 0)
     return result
 
-"""--------------------------image test--------------------------------------"""
+"""--------------------------image test--------------------------------------
 for source_img in os.listdir("test_images/"):
     first_frame = 1
     image = mpimg.imread("test_images/" + source_img)
@@ -234,7 +234,7 @@ for source_img in os.listdir("test_images/"):
     mpimg.imsave("out_images/roi/roi_" + source_img, roi_image)
     mpimg.imsave("out_images/lines/lines_" + source_img, line_image)
 
-"""--------------------------------------------------------------------------"""
+--------------------------------------------------------------------------"""
 
 """--------------------------Video test--------------------------------------"""
 
@@ -244,7 +244,7 @@ def save_video(filename):
     return out
 
 first_frame = 1
-cap = cv2.VideoCapture("test_videos/01.mp4")
+cap = cv2.VideoCapture("test_videos/drive.mp4")
 # clip1 = save_video('out_videos/01_result.mp4') # result 영상 저장
 # clip2 = save_video('out_videos/01_roi.mp4') # roi 영상 저장
 
@@ -254,7 +254,7 @@ while (cap.isOpened()):
 
     cv2.imshow("result", result)
     # clip1.write(result)
-    cv2.imshow("roi", roi)
+    # cv2.imshow("roi", roi)
     # clip2.write(roi)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
