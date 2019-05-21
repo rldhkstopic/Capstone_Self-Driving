@@ -145,11 +145,20 @@ def create_modules(blocks):
 
     return (net_info, module_list)
 
+def set_requires_grad(nets, requires_grad=False):
+    if not isinstance(nets, list):
+        nets = [nets]
+    for net in nets:
+        if net is not None:
+            for param in net.parameters():
+                param.requires_grad = requires_grad
+
 class Darknet(nn.Module):
     def __init__(self, cfgfile):
         super(Darknet, self).__init__()
         self.blocks = parse_cfg(cfgfile)
         self.net_info, self.module_list = create_modules(self.blocks)
+
 
     def forward(self, x, CUDA):
         modules = self.blocks[1:]

@@ -1,7 +1,7 @@
 from __future__ import division
 from torch.autograd import Variable
 from torch.cuda import FloatTensor
-from darknet import Darknet
+from darknet import Darknet, set_requires_grad
 from moviepy.editor import VideoFileClip
 from scipy.misc import imresize
 from PIL import Image
@@ -38,6 +38,25 @@ l_pos, r_pos, l_cent, r_cent = 0, 0, 0, 0
 uxhalf, uyhalf, dxhalf, dyhalf = 0, 0, 0, 0
 l_center, r_center, lane_center = ((0, 0)), ((0, 0)), ((0, 0))
 next_frame = (0, 0, 0, 0, 0, 0, 0, 0)
+
+
+def arg_parse():
+    parses = argparse.ArgumentParser(description='My capstone Design 2019')
+    parses.add_argument("--roi", dest = 'roi', default = 0, help = "roi flag")
+    parses.add_argument("--alpha", dest = 'alpha', default = 0, help = "center position add alpha")
+    parses.add_argument("--video", dest = 'video', default = "drive3.mp4")
+    parses.add_argument("--url", dest = 'url', default = False, type = str, help="youtube url link")
+    parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
+    parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
+    return parses.parse_args()
+
+"""
+python main.py --com COM4 --video drive.mp4
+python main.py --com COM4 --roi 1 --video drive06.mp4 --alpha 60
+python main.py --com COM4 --url https://youtu.be/YsPdvvixYfo --roi 1 --alpha 60
+"""
+
+args = arg_parse()
 
 def save_video(filename):
     fourcc = cv2.VideoWriter_fourcc(*'DIVX')
@@ -198,30 +217,30 @@ def get_pts(flag=0):
     if flag is 1 : return vertices2
 
 hei = 25
+alpha = int(args.alpha)
 font_size = 1
-def warning_text(image): # Information Box
+""" 핸들 조종 및 위험 메세지 표시 """
+def warning_text(image):
     whalf, height = 640, 720
-
-    angle = int(round(atan((dxhalf-(whalf-5))/120) * 180/np.pi)) * 3
+    center = whalf - 5 + alpha
+    angle = int(round(atan((dxhalf-(center))/120) * 180/np.pi, 3) * 3)
 
     m = 2
-    limit = 10
+    limit = 0
     value = 0
+    if angle > 90 : angle = 89
     if 90 > angle > limit :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
         cv2.putText(image, 'Turn Right', (160, hei*m), font, 0.8, red, font_size)
         value = angle
-    elif angle > 90 :
-        angle = 90
 
-    if -90 < angle < limit:
+    if angle < -90 : angle = -89
+    if -90 < angle < -limit:
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
         cv2.putText(image, 'Turn Left', (160, hei*m), font, 0.8, red, font_size)
-        value = -angle
-    elif angle < -90 :
-        angle = -90
+        value = -angle + 100
 
-    elif angle == limit :
+    elif -limit < angle <= limit :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, white, font_size)
         cv2.putText(image, 'None', (160, hei*m), font, 0.8, white, font_size)
         value = 0
@@ -232,7 +251,7 @@ def warning_text(image): # Information Box
     if mcu_port:
         mcu.write([value])
     # print(value)
-    
+
 """ 현재 영상 프레임 표시 """
 def show_fps(image, frames, start, color = white):
     now_fps = round(frames / (time.time() - start), 2)
@@ -240,9 +259,9 @@ def show_fps(image, frames, start, color = white):
 
 """ Steering Wheel Control 시각화 """
 def direction_line(image, height, whalf, color = yellow):
-    cv2.line(image, (whalf-5, height), (whalf-5, 600), white, 2) # 방향 제어 기준선
-    cv2.line(image, (whalf-5, height), (dxhalf, 600), red, 2) # 핸들 방향 제어
-    cv2.circle(image, (whalf-5, height), 120, white, 2)
+    cv2.line(image, (whalf-5+alpha, height), (whalf-5+alpha, 600), white, 2) # 방향 제어 기준선
+    cv2.line(image, (whalf-5+alpha, height), (dxhalf, 600), red, 2) # 핸들 방향 제어
+    cv2.circle(image, (whalf-5+alpha, height), 120, white, 2)
 
 """ 왼쪽 차선, 오른쪽 차선, 그리고 차선의 중앙 지점 표시 """
 def lane_position(image, gap = 20, length=20, thickness=2, color = red, bcolor = white): # length는 선의 위쪽 방향으로의 길이
@@ -253,25 +272,30 @@ def lane_position(image, gap = 20, length=20, thickness=2, color = red, bcolor =
     l_cent = int((l_left+l_right)/2)
     cv2.line(image, (l_center[0], l_center[1]+length), (l_center[0], l_center[1]-length), color, thickness)
 
-    cv2.line(image, (l_left, l_center[1]+length), (l_left, l_center[1]-length), bcolor, 1)
-    cv2.line(image, (l_right, l_center[1]+length), (l_right, l_center[1]-length), bcolor, 1)
-    cv2.line(image, (l_cent, l_center[1]+length-10), (l_cent, l_center[1]-length+10), bcolor, 1)
-    cv2.line(image, (l_left, l_center[1]), (l_right, l_center[1]), bcolor, 1)
+    # cv2.line(image, (l_left, l_center[1]+length), (l_left, l_center[1]-length), bcolor, 1)
+    # cv2.line(image, (l_right, l_center[1]+length), (l_right, l_center[1]-length), bcolor, 1)
+    # cv2.line(image, (l_cent, l_center[1]+length-10), (l_cent, l_center[1]-length+10), bcolor, 1)
+    # cv2.line(image, (l_left, l_center[1]), (l_right, l_center[1]), bcolor, 1)
 
     r_left = 730
     r_right = 950
     r_cent = int((r_left+r_right)/2)
     cv2.line(image, (r_center[0], r_center[1]+length), (r_center[0], r_center[1]-length), color, thickness)
 
-    cv2.line(image, (r_left, r_center[1]+length), (r_left, r_center[1]-length), bcolor, 1)
-    cv2.line(image, (r_right, r_center[1]+length), (r_right, r_center[1]-length), bcolor, 1)
-    cv2.line(image, (r_cent, r_center[1]+length-10), (r_cent, r_center[1]-length+10), bcolor, 1)
-    cv2.line(image, (r_left, r_center[1]), (r_right, r_center[1]), bcolor, 1)
-
 """ 왼쪽 차선과 오른쪽 차선을 직선으로 표시 """
 def draw_lanes(image, thickness = 3, color = red):
     cv2.line(image, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), red, 3)
     cv2.line(image, (next_frame[6], next_frame[7]), (next_frame[4], next_frame[5]), red, 3)
+
+def perspective(image): # Bird's eye view
+    pts1 = np.float32([[next_frame[0], next_frame[1]], [next_frame[2], next_frame[3]], [next_frame[4], next_frame[5]], [next_frame[6], next_frame[7]]])
+    pts2 = np.float32([[425, 0], [425, 720], [855, 0], [855, 720]])
+
+    M = cv2.getPerspectiveTransform(pts1, pts2)
+    dst = cv2.warpPerspective(image, M, (1280, 720))
+    cv2.line(dst, (l_cent, 0), (l_cent, 720), red, 2)
+    cv2.line(dst, (r_cent, 0), (r_cent, 720), red, 2)
+    return dst
 
 """ Image processing to detect the lanes """
 def process_image(image):
@@ -336,14 +360,6 @@ def visualize(image, flg):
             cv2.fillPoly(zeros, [pts], lime)
             lane_position(zeros)
             direction_line(zeros, height = height, whalf = whalf)
-
-            # cv2.line(zeros, (dxhalf, dyhalf), (uxhalf, uyhalf), red, 2)
-
-            # draw_lanes(zeros)
-
-            # warning_baseline(zeros, height = height, whalf = whalf)
-            # safety_baseline(frame, gap = gap, whalf = whalf)
-
     """ Lane Detection ROI """
     # cv2.putText(zeros, 'ROI', (930, 650), font, 0.8, yellow, font_size)
     # cv2.polylines(zeros, vertices, True, (0, 255, 255))
@@ -375,30 +391,22 @@ def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     image = results
     label = "{0}".format(classes[cls])
 
-    if cls == 2 or cls==3 or cls == 5 or cls == 7:#not 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motorbike)
-        if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
-            centx = int((c1[0]+c2[0])/2)
-            centy = int((c1[1]+c2[1])/2)
+    vals = [2, 3, 5, 7] #not 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motorbike)
+    for val in vals:
+        if cls == val:
+            if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
+                centx = int((c1[0]+c2[0])/2)
+                centy = int((c1[1]+c2[1])/2)
 
-            cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
-            cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
+                cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
+                cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
 
-            t_size = cv2.getTextSize(label, font2, 1, 1)[0]
-            c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-            # cv2.rectangle(image, c1, c2, white, -1)
-            cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
+                t_size = cv2.getTextSize(label, font2, 1, 1)[0]
+                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+                # cv2.rectangle(image, c1, c2, white, -1)
+                cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
     return image
 
-def arg_parse():
-    parses = argparse.ArgumentParser(description='My capstone Design 2019')
-    parses.add_argument("--roi", dest = 'roi', default = 0, help = "roi flag")
-    parses.add_argument("--video", dest = 'video', default = "drive3.mp4")
-    parses.add_argument("--url", dest = 'url', default = False, type = str, help="youtube url link")
-    parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
-    parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
-    return parses.parse_args()
-
-args = arg_parse()
 """------------------------Data Directory------------------------------------"""
 cfg = "cfg/yolov3.cfg"
 weights = "weights/yolov3.weights"
@@ -433,6 +441,7 @@ print("Reading weights file")
 model.load_weights(weights)
 print("Reading classes file")
 classes = load_classes(names)
+set_requires_grad(model, False)
 print("\nNetwork successfully loaded!")
 
 mcu_port = args.com
@@ -448,7 +457,9 @@ assert input_dim > 32
 
 # clip1 = save_video('out_videos/lane_' + image_name) # result 영상 저장
 """--------------------------Video test--------------------------------------"""
+torch.cuda.empty_cache()
 
+# CUDA = False
 CUDA = torch.cuda.is_available()
 if CUDA:
     model.cuda()
@@ -477,52 +488,49 @@ while (cap.isOpened()):
         prc_img, _ = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
-        """ Object Detection """
-        # prep_frame = prep_image(frame, input_dim)
-        # frame_dim = frame.shape[1], frame.shape[0]
-        # frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
-        #
-        # if CUDA:
-        #     frame_dim = frame_dim.cuda()
-        #     prep_frame = prep_frame.cuda()
-        #
-        # with torch.no_grad():
-        #     output = model(Variable(prep_frame, True), CUDA)
-        # output = write_results(output, confidence, num_classes, nms_thesh)
-        #
-        # # if type(output) == int:
-        # #     frames += 1
-        # #     # cv2.imshow("Frame", frame)
-        # #
-        # #     key = cv2.waitKey(1)
-        # #     if key & 0xFF == ord('q'):
-        # #         break
-        # #     continue
-        #
-        # frame_dim = frame_dim.repeat(output.size(0), 1)
-        # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
-        #
-        # output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
-        # output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
-        # output[:, 1:5] /= scaling_factor
-        #
-        # for i in range(output.shape[0]):
-        #     output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
-        #     output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
-        #
-        # zero_frame = np.zeros_like(frame) # Object frame zero copy
-        # list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
-        #
-        # cnt = 0 # Car count
-        # for x in output:
-        #     if int(x[-1]) == 2 or int(x[-1]) == 3 or int(x[-1]) == 5 or int(x[-1]) == 7: cnt += 1
-        # cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
-        #
-        # object_result = cv2.add(frame, zero_frame)
-        # lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
-        lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
+        bird = perspective(frame)
 
-        # cv2.imshow("rr", zeros)
+        """ Object Detection """
+        prep_frame = prep_image(frame, input_dim)
+        frame_dim = frame.shape[1], frame.shape[0]
+        frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+
+        if CUDA:
+            frame_dim = frame_dim.cuda()
+            prep_frame = prep_frame.cuda()
+
+        with torch.no_grad():
+            output = model(Variable(prep_frame, True), CUDA)
+        output = write_results(output, confidence, num_classes, nms_thesh)
+
+        frame_dim = frame_dim.repeat(output.size(0), 1)
+        # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
+        scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
+
+        output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
+        output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
+        output[:, 1:5] /= scaling_factor
+
+        for i in range(output.shape[0]):
+            output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
+            output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
+
+        zero_frame = np.zeros_like(frame) # Object frame zero copy
+        list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
+
+        cnt = 0 # Car count
+        vals = [2, 3, 5, 7]
+        for x in output:
+            for val in vals:
+                if int(x[-1] == val) : cnt += 1
+        cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
+
+        object_result = cv2.add(frame, zero_frame)
+        lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
+        # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
+
+        # bird = perspective(frame)
+        cv2.imshow("bird", bird)
         cv2.imshow("Result", lane_result)
         # clip1.write(lane_result)
         frames += 1
