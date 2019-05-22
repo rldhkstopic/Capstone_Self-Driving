@@ -1,7 +1,11 @@
 from __future__ import division
+
 from torch.autograd import Variable
 from torch.cuda import FloatTensor
+import torch.nn as nn
+
 from darknet import Darknet, set_requires_grad
+from shapely.geometry import Polygon, Point
 from moviepy.editor import VideoFileClip
 from scipy.misc import imresize
 from PIL import Image
@@ -58,9 +62,9 @@ python main.py --com COM4 --url https://youtu.be/YsPdvvixYfo --roi 1 --alpha 60
 
 args = arg_parse()
 
-def save_video(filename):
+def save_video(filename, frame=60.0):
     fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-    out = cv2.VideoWriter(filename, fourcc, 60.0, (1280,720))
+    out = cv2.VideoWriter(filename, fourcc, frame, (1280,720))
     return out
 
 def grayscale(img):
@@ -231,22 +235,22 @@ def warning_text(image):
     if angle > 90 : angle = 89
     if 90 > angle > limit :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
-        cv2.putText(image, 'Turn Right', (160, hei*m), font, 0.8, red, font_size)
+        cv2.putText(image, 'Turn Right', (150, hei*m), font, 0.8, red, font_size)
         value = angle
 
     if angle < -90 : angle = -89
     if -90 < angle < -limit:
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, red, font_size)
-        cv2.putText(image, 'Turn Left', (160, hei*m), font, 0.8, red, font_size)
+        cv2.putText(image, 'Turn Left', (150, hei*m), font, 0.8, red, font_size)
         value = -angle + 100
 
-    elif -limit < angle <= limit :
+    elif angle == 0 :
         cv2.putText(image, 'WARNING : ', (10, hei*m), font, 0.8, white, font_size)
-        cv2.putText(image, 'None', (160, hei*m), font, 0.8, white, font_size)
+        cv2.putText(image, 'None', (150, hei*m), font, 0.8, white, font_size)
         value = 0
 
-    cv2.putText(image, 'angle = {0}'.format(angle), (10, hei*4), font, 0.7, white, font_size)
-    cv2.putText(image, 'value = {0}'.format(value), (10, hei*5), font, 0.7, white, font_size)
+    # cv2.putText(image, 'angle = {0}'.format(angle), (10, hei*4), font, 0.7, white, font_size)
+    # cv2.putText(image, 'value = {0}'.format(value), (10, hei*5), font, 0.7, white, font_size)
 
     if mcu_port:
         mcu.write([value])
@@ -272,11 +276,6 @@ def lane_position(image, gap = 20, length=20, thickness=2, color = red, bcolor =
     l_cent = int((l_left+l_right)/2)
     cv2.line(image, (l_center[0], l_center[1]+length), (l_center[0], l_center[1]-length), color, thickness)
 
-    # cv2.line(image, (l_left, l_center[1]+length), (l_left, l_center[1]-length), bcolor, 1)
-    # cv2.line(image, (l_right, l_center[1]+length), (l_right, l_center[1]-length), bcolor, 1)
-    # cv2.line(image, (l_cent, l_center[1]+length-10), (l_cent, l_center[1]-length+10), bcolor, 1)
-    # cv2.line(image, (l_left, l_center[1]), (l_right, l_center[1]), bcolor, 1)
-
     r_left = 730
     r_right = 950
     r_cent = int((r_left+r_right)/2)
@@ -287,6 +286,25 @@ def draw_lanes(image, thickness = 3, color = red):
     cv2.line(image, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), red, 3)
     cv2.line(image, (next_frame[6], next_frame[7]), (next_frame[4], next_frame[5]), red, 3)
 
+""" 두 차선이 Cross하는 지점을 계산 """
+def lane_cross_point():
+    """
+    y = m(x-a) + b (m은 negative)
+    y = n(x-e) + f (n은 positive)
+    -> x = (am - b - en + f)/(m-n)
+    """
+    for seq in range(8):
+        if next_frame[seq] is 0: # next_frame 중 하나라도 0이 존재하면 break
+            return (0, 0)
+        else:
+            l_slope = get_slope(next_frame[0], next_frame[1], next_frame[2], next_frame[3])
+            r_slope = get_slope(next_frame[6], next_frame[7], next_frame[4], next_frame[5])
+
+            x = (next_frame[0]*l_slope - next_frame[1] - next_frame[6]*r_slope + next_frame[7])/(l_slope-r_slope)
+            y = l_slope*(x-next_frame[0]) + next_frame[1]
+            return int(x), int(y)
+
+""" 시점변경 """
 def perspective(image): # Bird's eye view
     pts1 = np.float32([[next_frame[0], next_frame[1]], [next_frame[2], next_frame[3]], [next_frame[4], next_frame[5]], [next_frame[6], next_frame[7]]])
     pts2 = np.float32([[425, 0], [425, 720], [855, 0], [855, 720]])
@@ -297,7 +315,7 @@ def perspective(image): # Bird's eye view
     cv2.line(dst, (r_cent, 0), (r_cent, 720), red, 2)
     return dst
 
-""" Image processing to detect the lanes """
+""" 차선 검출을 위한 이미지 전처리 """
 def process_image(image):
     global first_frame
 
@@ -341,7 +359,7 @@ def process_image(image):
 
     return result, roi_image
 
-""" Visualize the information of lane detection """
+""" 차선 검출 결과물을 보여줌 """
 def visualize(image, flg):
     height, width = image.shape[:2]
     whalf = int(width/2)
@@ -360,29 +378,14 @@ def visualize(image, flg):
             cv2.fillPoly(zeros, [pts], lime)
             lane_position(zeros)
             direction_line(zeros, height = height, whalf = whalf)
+
     """ Lane Detection ROI """
     # cv2.putText(zeros, 'ROI', (930, 650), font, 0.8, yellow, font_size)
     # cv2.polylines(zeros, vertices, True, (0, 255, 255))
-
-    return zeros
-
-def frontcar(image):
-    height, width = image.shape[:2]
-    zeros = np.zeros_like(image)
-    whalf = int(width/2)
-    hhalf = int(height/2)
-
-    gap = 15
-    max = 100
-    if not lane_center[1] < hhalf:
-        if r_center[0]-l_center[0] > max:
-            cv2.fillPoly(zeros, [lane_pts()], white)
-            cv2.rectangle(zeros, (next_frame[0], 0), (next_frame[4], next_frame[5]), white, -1)
-            # xor_zeros = cv2.bitwise_xor(limes, cent)
     return zeros
 
 # object detection start and end point
-""" Visualize the information of object detection """
+""" 차량만 검출"""
 def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
@@ -391,20 +394,28 @@ def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     image = results
     label = "{0}".format(classes[cls])
 
-    vals = [2, 3, 5, 7] #not 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motorbike)
+    vals = [0, 2, 3, 5, 7] #not 2 or 3 or 5 or 7: # 인식할 Vehicles를 지정 (2car, 7truck, 5bus, 3motorbike)
     for val in vals:
         if cls == val:
             if not abs(c1[0]-c2[0]) > 1000: # 과도한 Boxing 제외
                 centx = int((c1[0]+c2[0])/2)
                 centy = int((c1[1]+c2[1])/2)
 
-                cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
-                cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
+                if cls == 0:
+                    cv2.rectangle(image, c1, c2, blue, 1)
+                    t_size = cv2. getTextSize(label, font2, 1, 1)[0]
+                    c2 = c1[0] + t_size[0] + 3, c1[1] - t_size[1] - 4
+                    # cv2.rectangle(image, c1, c2, white, -1)
+                    cv2.putText(image, label, (c1[0], c1[1] - t_size[1] + 4), font2, 1, blue, 1)
 
-                t_size = cv2.getTextSize(label, font2, 1, 1)[0]
-                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-                # cv2.rectangle(image, c1, c2, white, -1)
-                cv2.putText(image, label, (c1[0], c1[1] + t_size[1] + 4), font2, 1, font_color, 1)
+                else:
+                    cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
+                    cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
+
+                    t_size = cv2.getTextSize(label, font2, 1, 1)[0]
+                    c2 = c1[0] + t_size[0] + 3, c1[1] - t_size[1] - 4
+                    # cv2.rectangle(image, c1, c2, white, -1)
+                    cv2.putText(image, label, (c1[0], c1[1] - t_size[1] + 10), font2, 1, font_color, 1)
     return image
 
 """------------------------Data Directory------------------------------------"""
@@ -413,6 +424,7 @@ weights = "weights/yolov3.weights"
 names = "data/coco.names"
 
 video_directory = "test_videos/"
+args.video = "drive.mp4"
 video = video_directory + args.video
 
 # URL = "https://youtu.be/jieP4QkVze8"
@@ -432,7 +444,7 @@ start = 0
 batch_size = 1
 confidence = 0.8 # 신뢰도
 nms_thesh = 0.4
-resol = 416 # 해상도
+resol = 640 # 해상도
 
 num_classes = 12
 print("Reading configure file")
@@ -455,7 +467,7 @@ input_dim = int(model.net_info["height"])
 assert input_dim % 32 == 0
 assert input_dim > 32
 
-# clip1 = save_video('out_videos/lane_' + image_name) # result 영상 저장
+# clip1 = save_video('out_videos/detec_' + args.video, 30.0) # result 영상 저장
 """--------------------------Video test--------------------------------------"""
 torch.cuda.empty_cache()
 
@@ -477,6 +489,7 @@ while (cap.isOpened()):
     ret, frame = cap.read()
     # frame = imresize(frame, (720, 1280, 3))
     if ret:
+
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
 
         show_fps(frame, frames, start, color = yellow)
@@ -488,50 +501,75 @@ while (cap.isOpened()):
         prc_img, _ = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
-        bird = perspective(frame)
-
         """ Object Detection """
-        prep_frame = prep_image(frame, input_dim)
-        frame_dim = frame.shape[1], frame.shape[0]
-        frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+        if frames %3 == 0: # Frame 높히기 눈속임
+            prep_frame = prep_image(frame, input_dim)
+            frame_dim = frame.shape[1], frame.shape[0]
+            frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
 
-        if CUDA:
-            frame_dim = frame_dim.cuda()
-            prep_frame = prep_frame.cuda()
+            if CUDA:
+                frame_dim = frame_dim.cuda()
+                prep_frame = prep_frame.cuda()
 
-        with torch.no_grad():
-            output = model(Variable(prep_frame, True), CUDA)
-        output = write_results(output, confidence, num_classes, nms_thesh)
+                with torch.no_grad():
+                    output = model(Variable(prep_frame, True), CUDA)
+                    output = write_results(output, confidence, num_classes, nms_thesh)
 
-        frame_dim = frame_dim.repeat(output.size(0), 1)
-        # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
-        scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
+                    frame_dim = frame_dim.repeat(output.size(0), 1)
+            # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
+            scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
 
-        output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
-        output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
-        output[:, 1:5] /= scaling_factor
+            output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
+            output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
+            output[:, 1:5] /= scaling_factor
 
-        for i in range(output.shape[0]):
-            output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
-            output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
+            for i in range(output.shape[0]):
+                output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
+                output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
 
-        zero_frame = np.zeros_like(frame) # Object frame zero copy
-        list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
+            zero_frame = np.zeros_like(frame) # Object frame zero copy
+            list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
 
-        cnt = 0 # Car count
-        vals = [2, 3, 5, 7]
-        for x in output:
-            for val in vals:
-                if int(x[-1] == val) : cnt += 1
-        cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
+            crossx, crossy = lane_cross_point()
+            l_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (crossx, 0), (0, 0), (0, 720)])
+            r_poly = Polygon([(next_frame[6], next_frame[7]), (crossx, crossy), (crossx, 0), (1280, 0), (1280, 720)])
+            c_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (next_frame[6], next_frame[7])]) # Center Polygon
 
-        object_result = cv2.add(frame, zero_frame)
-        lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
-        # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
+            cnt = 0 # Car count
+            vals = [2, 3, 5, 7]
+            l_cnt, r_cnt, c_cnt = 0, 0, 0
+            for x in output:
+                c1 = tuple(x[1:3].int())
+                c2 = tuple(x[3:5].int())
+                centx = int((c1[0]+c2[0])/2)
+                centy = int((c1[1]+c2[1])/2)
 
-        # bird = perspective(frame)
-        cv2.imshow("bird", bird)
-        cv2.imshow("Result", lane_result)
+                carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
+                carcent = Point((centx, centy)) # Car Center point
+
+                """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
+                for val in vals:
+                    if int(x[-1]) == val:
+                        cnt += 1
+                        if l_poly.intersects(carcent):
+                            l_cnt += 1
+                        if r_poly.intersects(carcent):
+                            r_cnt += 1
+                        if c_poly.intersects(carcent):
+                            c_cnt += 1
+                            if c_cnt > 1 : c_cnt = 1
+
+                        if l_cnt or r_cnt or c_cnt:
+                            cnt = l_cnt + c_cnt + r_cnt
+
+            cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
+            cv2.putText(frame, 'L = {0} / F = {2} / R = {1}'.format(l_cnt, r_cnt, c_cnt), (10, 100), font, 0.7, white, font_size)
+
+            object_result = cv2.add(frame, zero_frame)
+            lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
+            # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
+
+            cv2.imshow("Result", lane_result)
         # clip1.write(lane_result)
         frames += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):

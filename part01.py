@@ -245,7 +245,7 @@ def save_video(filename):
 
 first_frame = 1
 cap = cv2.VideoCapture("test_videos/drive.mp4")
-# clip1 = save_video('out_videos/01_result.mp4') # result 영상 저장
+clip1 = save_video('out_videos/01_result.mp4') # result 영상 저장
 # clip2 = save_video('out_videos/01_roi.mp4') # roi 영상 저장
 
 while (cap.isOpened()):
@@ -253,7 +253,7 @@ while (cap.isOpened()):
     result, roi = process_image(frame)
 
     cv2.imshow("result", result)
-    # clip1.write(result)
+    clip1.write(result)
     # cv2.imshow("roi", roi)
     # clip2.write(roi)
 
