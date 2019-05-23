@@ -30,10 +30,10 @@ white = (255, 255, 255)
 yellow = (0, 255, 255)
 deepgray = (43, 43, 43)
 dark = (1, 1, 1)
-
 cyan = (255, 255, 0)
 magenta = (255, 0, 255)
 lime = (0, 255, 128)
+
 font = cv2.FONT_HERSHEY_SIMPLEX
 font2 = cv2.FONT_HERSHEY_PLAIN
 
@@ -48,7 +48,7 @@ def arg_parse():
     parses = argparse.ArgumentParser(description='My capstone Design 2019')
     parses.add_argument("--roi", dest = 'roi', default = 0, help = "roi flag")
     parses.add_argument("--alpha", dest = 'alpha', default = 0, help = "center position add alpha")
-    parses.add_argument("--video", dest = 'video', default = "drive3.mp4")
+    parses.add_argument("--video", dest = 'video', default = "drive.mp4")
     parses.add_argument("--url", dest = 'url', default = False, type = str, help="youtube url link")
     parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
     parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
@@ -254,7 +254,6 @@ def warning_text(image):
 
     if mcu_port:
         mcu.write([value])
-    # print(value)
 
 """ 현재 영상 프레임 표시 """
 def show_fps(image, frames, start, color = white):
@@ -385,7 +384,7 @@ def visualize(image, flg):
     return zeros
 
 # object detection start and end point
-""" 차량만 검출"""
+""" 객체 검출"""
 def write(x, results, color = [126, 232, 229], font_color = red): # x = output
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
@@ -418,19 +417,27 @@ def write(x, results, color = [126, 232, 229], font_color = red): # x = output
                     cv2.putText(image, label, (c1[0], c1[1] - t_size[1] + 10), font2, 1, font_color, 1)
     return image
 
+def laneregion(image):
+    zeros = np.zeros_like(image) # Object frame zero copy
+    for seq in range(8):
+        if next_frame[seq] is 0: # next_frame 중 하나라도 0이 존재하면 break
+            pass
+        else:
+            cv2.fillPoly(zeros, [np.array([[next_frame[0], 720], [crossx, crossy], [next_frame[6], 720]], np.int32).reshape((-1, 1, 2))], lime)  # Cneter Region
+            cv2.fillPoly(zeros, [np.array([[0, 720], [next_frame[0], 720], [crossx, crossy], [crossx, 0], [0, 0]], np.int32).reshape((-1, 1, 2))], yellow) # Left Region
+            cv2.fillPoly(zeros, [np.array([[1280, 720], [next_frame[6], 720], [crossx, crossy], [crossx, 0], [1280, 0]], np.int32).reshape((-1, 1, 2))], blue) # Right Region
+    return zeros
+
 """------------------------Data Directory------------------------------------"""
 cfg = "cfg/yolov3.cfg"
 weights = "weights/yolov3.weights"
 names = "data/coco.names"
 
 video_directory = "test_videos/"
-args.video = "drive.mp4"
 video = video_directory + args.video
 
 # URL = "https://youtu.be/jieP4QkVze8"
 # URL = "https://youtu.be/YsPdvvixYfo" roi = 1
-# URL = ""
-
 url = args.url
 if url:
     vpafy = pafy.new(url)
@@ -443,8 +450,8 @@ first_frame = 1
 start = 0
 batch_size = 1
 confidence = 0.8 # 신뢰도
-nms_thesh = 0.4
-resol = 640 # 해상도
+nms_thesh = 0.3 # Intersection of union의 범위를 설정해줌 (낮을수록 box 개수가 작아짐)
+resol = 416 # 해상도
 
 num_classes = 12
 print("Reading configure file")
@@ -487,22 +494,20 @@ print("\nVideo is now ready to show.")
 
 while (cap.isOpened()):
     ret, frame = cap.read()
-    # frame = imresize(frame, (720, 1280, 3))
+    cpframe = frame.copy() # Lane frame copy
     if ret:
-
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
-
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame)
 
-        cpframe = frame.copy() # Lane frame copy
+        zerof = laneregion(frame)
 
         """ Lane Detection """
         prc_img, _ = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
         """ Object Detection """
-        if frames %3 == 0: # Frame 높히기 눈속임
+        if frames %3 == 0: # Frame 높히기; 눈속임
             prep_frame = prep_image(frame, input_dim)
             frame_dim = frame.shape[1], frame.shape[0]
             frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
@@ -569,8 +574,12 @@ while (cap.isOpened()):
             lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
             # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
 
+            # cv2.imshow("Re", zerof)
+            cv2.circle(lane_result, (crossx, crossy), radius=6, color=red, thickness=-1)
+
             cv2.imshow("Result", lane_result)
-        # clip1.write(lane_result)
+            # clip1.write(lane_result)
+
         frames += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
