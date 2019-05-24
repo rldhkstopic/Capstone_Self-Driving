@@ -48,7 +48,7 @@ def arg_parse():
     parses = argparse.ArgumentParser(description='My capstone Design 2019')
     parses.add_argument("--roi", dest = 'roi', default = 0, help = "roi flag")
     parses.add_argument("--alpha", dest = 'alpha', default = 0, help = "center position add alpha")
-    parses.add_argument("--video", dest = 'video', default = "drive.mp4")
+    parses.add_argument("--video", dest = 'video', default = "drive3.mp4")
     parses.add_argument("--url", dest = 'url', default = False, type = str, help="youtube url link")
     parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
     parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
@@ -423,9 +423,12 @@ def laneregion(image):
         if next_frame[seq] is 0: # next_frame 중 하나라도 0이 존재하면 break
             pass
         else:
-            cv2.fillPoly(zeros, [np.array([[next_frame[0], 720], [crossx, crossy], [next_frame[6], 720]], np.int32).reshape((-1, 1, 2))], lime)  # Cneter Region
-            cv2.fillPoly(zeros, [np.array([[0, 720], [next_frame[0], 720], [crossx, crossy], [crossx, 0], [0, 0]], np.int32).reshape((-1, 1, 2))], yellow) # Left Region
+            cv2.fillPoly(zeros, [np.array([[next_frame[2], 720], [crossx, crossy], [next_frame[6], 720]], np.int32).reshape((-1, 1, 2))], lime)  # Cneter Region
+            cv2.line(zeros, (crossx, crossy), (crossx, 0), lime, 1)
+            cv2.fillPoly(zeros, [np.array([[0, 720], [next_frame[2], 720], [crossx, crossy], [crossx, 0], [0, 0]], np.int32).reshape((-1, 1, 2))], yellow) # Left Region
             cv2.fillPoly(zeros, [np.array([[1280, 720], [next_frame[6], 720], [crossx, crossy], [crossx, 0], [1280, 0]], np.int32).reshape((-1, 1, 2))], blue) # Right Region
+            cv2.circle(zeros, (crossx, crossy), radius=6, color=red, thickness=-1)
+
     return zeros
 
 """------------------------Data Directory------------------------------------"""
@@ -452,6 +455,8 @@ batch_size = 1
 confidence = 0.8 # 신뢰도
 nms_thesh = 0.3 # Intersection of union의 범위를 설정해줌 (낮을수록 box 개수가 작아짐)
 resol = 416 # 해상도
+
+whalf, height = 640, 720
 
 num_classes = 12
 print("Reading configure file")
@@ -496,11 +501,12 @@ while (cap.isOpened()):
     ret, frame = cap.read()
     cpframe = frame.copy() # Lane frame copy
     if ret:
+        # zerof = laneregion(frame)
+        # show = cv2.addWeighted(frame, 1, zerof, 0.6, 0)
+
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame)
-
-        zerof = laneregion(frame)
 
         """ Lane Detection """
         prc_img, _ = process_image(cpframe)
@@ -521,7 +527,7 @@ while (cap.isOpened()):
                     output = write_results(output, confidence, num_classes, nms_thesh)
 
                     frame_dim = frame_dim.repeat(output.size(0), 1)
-            # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1, 1)
+            # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1,   1)
             scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
 
             output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
@@ -548,9 +554,11 @@ while (cap.isOpened()):
                 c2 = tuple(x[3:5].int())
                 centx = int((c1[0]+c2[0])/2)
                 centy = int((c1[1]+c2[1])/2)
+                undcentx = int((c1[0]+c2[0])/2)
 
                 carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
                 carcent = Point((centx, centy)) # Car Center point
+                carundcent = Point((undcentx, c2[1]))
 
                 """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
                 for val in vals:
@@ -563,6 +571,10 @@ while (cap.isOpened()):
                         if c_poly.intersects(carcent):
                             c_cnt += 1
                             if c_cnt > 1 : c_cnt = 1
+                            # 앞 차량과의 거리계산
+                            # pl = carundcent.distance(Point(whalf-5, 720))
+                            # dist = round((pl * 1.8 / (next_frame[6] - next_frame[2])) * 180/np.pi, 2)
+                            # print("{} m".format(dist))
 
                         if l_cnt or r_cnt or c_cnt:
                             cnt = l_cnt + c_cnt + r_cnt
@@ -574,9 +586,12 @@ while (cap.isOpened()):
             lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
             # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
 
-            # cv2.imshow("Re", zerof)
-            cv2.circle(lane_result, (crossx, crossy), radius=6, color=red, thickness=-1)
+            cv2.circle(lane_result, (next_frame[0], next_frame[1]), radius=3, color=red, thickness=-1)
+            cv2.circle(lane_result, (next_frame[2], next_frame[3]), radius=3, color=blue, thickness=-1)
+            cv2.circle(lane_result, (next_frame[4], next_frame[5]), radius=3, color=green, thickness=-1)
+            cv2.circle(lane_result, (next_frame[6], next_frame[7]), radius=3, color=yellow, thickness=-1)
 
+            # cv2.imshow("Re", bird)
             cv2.imshow("Result", lane_result)
             # clip1.write(lane_result)
 
