@@ -285,6 +285,10 @@ def draw_lanes(image, thickness = 3, color = red):
     cv2.line(image, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), red, 3)
     cv2.line(image, (next_frame[6], next_frame[7]), (next_frame[4], next_frame[5]), red, 3)
 
+""" Arduino Map 함수 """
+def map(x, in_min, in_max, out_min, out_max):
+    return ((x-in_min) * (out_max-out_min) / (in_max-in_min) + out_min)
+
 """ 두 차선이 Cross하는 지점을 계산 """
 def lane_cross_point():
     """
@@ -409,12 +413,12 @@ def write(x, results, color = [126, 232, 229], font_color = red): # x = output
 
                 else:
                     cv2.rectangle(image, c1, c2, red, 1) # 자동차 감지한 사각형
-                    cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
+                    # cv2.circle(image, (centx, centy), 3, blue, -1) # Detected vehicles' center
 
                     t_size = cv2.getTextSize(label, font2, 1, 1)[0]
                     c2 = c1[0] + t_size[0] + 3, c1[1] - t_size[1] - 4
-                    # cv2.rectangle(image, c1, c2, white, -1)
-                    cv2.putText(image, label, (c1[0], c1[1] - t_size[1] + 10), font2, 1, font_color, 1)
+                    cv2.rectangle(image, c1, (c2[0]-3, c2[1]+4), red, -1)
+                    cv2.putText(image, label, (c1[0], c1[1] - t_size[1] + 10), font2, 1, white, 1)
     return image
 
 def laneregion(image):
@@ -479,7 +483,7 @@ input_dim = int(model.net_info["height"])
 assert input_dim % 32 == 0
 assert input_dim > 32
 
-# clip1 = save_video('out_videos/detec_' + args.video, 30.0) # result 영상 저장
+# clip1 = save_video('out_videos/final_' + args.video, 12.0) # result 영상 저장
 """--------------------------Video test--------------------------------------"""
 torch.cuda.empty_cache()
 
@@ -554,11 +558,10 @@ while (cap.isOpened()):
                 c2 = tuple(x[3:5].int())
                 centx = int((c1[0]+c2[0])/2)
                 centy = int((c1[1]+c2[1])/2)
-                undcentx = int((c1[0]+c2[0])/2)
 
                 carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
                 carcent = Point((centx, centy)) # Car Center point
-                carundcent = Point((undcentx, c2[1]))
+                carundcent = Point((centx, c2[1]))
 
                 """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
                 for val in vals:
@@ -571,10 +574,15 @@ while (cap.isOpened()):
                         if c_poly.intersects(carcent):
                             c_cnt += 1
                             if c_cnt > 1 : c_cnt = 1
+
                             # 앞 차량과의 거리계산
-                            # pl = carundcent.distance(Point(whalf-5, 720))
-                            # dist = round((pl * 1.8 / (next_frame[6] - next_frame[2])) * 180/np.pi, 2)
-                            # print("{} m".format(dist))
+                            pl = carundcent.distance(Point(whalf-5, 720))
+                            dist = (pl * 1.8 / (next_frame[6] - next_frame[2])) * 180/np.pi
+                            dist = round(map(dist, 20, 40, 10, 70), 2)
+
+                            cv2.line(frame, (centx, c1[1]), (centx, c1[1]-120), red, 1)
+                            cv2.line(frame, (centx-50, c1[1]-120), (centx+40, c1[1]-120), red, 1)
+                            cv2.putText(frame, "{} m".format(dist), (centx-45, c1[1]-130), font, 0.6, red, 1)
 
                         if l_cnt or r_cnt or c_cnt:
                             cnt = l_cnt + c_cnt + r_cnt
@@ -586,10 +594,10 @@ while (cap.isOpened()):
             lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
             # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
 
-            cv2.circle(lane_result, (next_frame[0], next_frame[1]), radius=3, color=red, thickness=-1)
-            cv2.circle(lane_result, (next_frame[2], next_frame[3]), radius=3, color=blue, thickness=-1)
-            cv2.circle(lane_result, (next_frame[4], next_frame[5]), radius=3, color=green, thickness=-1)
-            cv2.circle(lane_result, (next_frame[6], next_frame[7]), radius=3, color=yellow, thickness=-1)
+            # cv2.circle(lane_result, (next_frame[0], next_frame[1]), radius=3, color=red, thickness=-1)
+            # cv2.circle(lane_result, (next_frame[2], next_frame[3]), radius=3, color=blue, thickness=-1)
+            # cv2.circle(lane_result, (next_frame[4], next_frame[5]), radius=3, color=green, thickness=-1)
+            # cv2.circle(lane_result, (next_frame[6], next_frame[7]), radius=3, color=yellow, thickness=-1)
 
             # cv2.imshow("Re", bird)
             cv2.imshow("Result", lane_result)
