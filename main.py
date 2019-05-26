@@ -187,6 +187,9 @@ def draw_lines(img, lines):
     dxhalf = int((next_frame[0]+next_frame[4])/2)
     dyhalf = int((next_frame[1]+next_frame[5])/2)
 
+    cv2.line(img, (next_frame[0], next_frame[1]), (next_frame[2], next_frame[3]), red, 2)
+    cv2.line(img, (next_frame[4], next_frame[5]), (next_frame[6], next_frame[7]), red, 2)
+
     cache = next_frame
 
 def lane_pts():
@@ -360,7 +363,7 @@ def process_image(image):
     result = weighted_img(line_image, image, α=0.8, β=1., λ=0.)
     # cv2.polylines(result, vertices, True, (0, 255, 255)) # ROI mask
 
-    return result, roi_image
+    return result, line_image
 
 """ 차선 검출 결과물을 보여줌 """
 def visualize(image, flg):
@@ -428,10 +431,10 @@ def laneregion(image):
             pass
         else:
             cv2.fillPoly(zeros, [np.array([[next_frame[2], 720], [crossx, crossy], [next_frame[6], 720]], np.int32).reshape((-1, 1, 2))], lime)  # Cneter Region
-            cv2.line(zeros, (crossx, crossy), (crossx, 0), lime, 1)
-            cv2.fillPoly(zeros, [np.array([[0, 720], [next_frame[2], 720], [crossx, crossy], [crossx, 0], [0, 0]], np.int32).reshape((-1, 1, 2))], yellow) # Left Region
+            # cv2.line(zeros, (crossx, crossy), (crossx, 0), lime, 2)
+            cv2.fillPoly(zeros, [np.array([[0, 720], [next_frame[2], 720], [crossx, crossy], [crossx, 0], [0, 0]], np.int32).reshape((-1, 1, 2))], red) # Left Region
             cv2.fillPoly(zeros, [np.array([[1280, 720], [next_frame[6], 720], [crossx, crossy], [crossx, 0], [1280, 0]], np.int32).reshape((-1, 1, 2))], blue) # Right Region
-            cv2.circle(zeros, (crossx, crossy), radius=6, color=red, thickness=-1)
+            # cv2.circle(zeros, (crossx, crossy), radius=6, color=red, thickness=-1)
 
     return zeros
 
@@ -508,99 +511,96 @@ while (cap.isOpened()):
         # zerof = laneregion(frame)
         # show = cv2.addWeighted(frame, 1, zerof, 0.6, 0)
 
-        cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
-        show_fps(frame, frames, start, color = yellow)
-        warning_text(frame)
+        # cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
+        # show_fps(frame, frames, start, color = yellow)
+        # warning_text(frame)
 
         """ Lane Detection """
-        prc_img, _ = process_image(cpframe)
+        prc_img, hough = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
         """ Object Detection """
-        if frames %3 == 0: # Frame 높히기; 눈속임
-            prep_frame = prep_image(frame, input_dim)
-            frame_dim = frame.shape[1], frame.shape[0]
-            frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+        # if frames %3 == 0: # Frame 높히기; 눈속임
+        #     prep_frame = prep_image(frame, input_dim)
+        #     frame_dim = frame.shape[1], frame.shape[0]
+        #     frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
+        #
+        #     if CUDA:
+        #         frame_dim = frame_dim.cuda()
+        #         prep_frame = prep_frame.cuda()
+        #
+        #         with torch.no_grad():
+        #             output = model(Variable(prep_frame, True), CUDA)
+        #             output = write_results(output, confidence, num_classes, nms_thesh)
+        #
+        #             frame_dim = frame_dim.repeat(output.size(0), 1)
+        #     # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1,   1)
+        #     scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
+        #
+        #     output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
+        #     output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
+        #     output[:, 1:5] /= scaling_factor
+        #
+        #     for i in range(output.shape[0]):
+        #         output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
+        #         output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
+        #
+        #     zero_frame = np.zeros_like(frame) # Object frame zero copy
+        #     list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
+        #
+        #     crossx, crossy = lane_cross_point()
+        #
+        #     l_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (crossx, 0), (0, 0), (0, 720)])
+        #     r_poly = Polygon([(next_frame[6], next_frame[7]), (crossx, crossy), (crossx, 0), (1280, 0), (1280, 720)])
+        #     c_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (next_frame[6], next_frame[7])]) # Center Polygon
+        #
+        #     cnt = 0 # Car count
+        #     vals = [2, 3, 5, 7]
+        #     l_cnt, r_cnt, c_cnt = 0, 0, 0
+        #     for x in output:
+        #         c1 = tuple(x[1:3].int())
+        #         c2 = tuple(x[3:5].int())
+        #         centx = int((c1[0]+c2[0])/2)
+        #         centy = int((c1[1]+c2[1])/2)
+        #
+        #         carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
+        #         carcent = Point((centx, centy)) # Car Center point
+        #         carundcent = Point((centx, c2[1]))
+        #
+        #         """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
+        #         for val in vals:
+        #             if int(x[-1]) == val:
+        #                 cnt += 1
+        #                 if l_poly.intersects(carcent):
+        #                     l_cnt += 1
+        #                 if r_poly.intersects(carcent):
+        #                     r_cnt += 1
+        #                 if c_poly.intersects(carcent):
+        #                     c_cnt += 1
+        #                     if c_cnt > 1 : c_cnt = 1
+        #
+        #                     # 앞 차량과의 거리계산
+        #                     pl = carundcent.distance(Point(whalf-5, 720))
+        #                     dist = (pl * 1.8 / (next_frame[6] - next_frame[2])) * 180/np.pi
+        #                     dist = round(map(dist, 20, 40, 10, 70), 2)
+        #
+        #                     cv2.line(frame, (centx, c1[1]), (centx, c1[1]-120), red, 1)
+        #                     cv2.line(frame, (centx-50, c1[1]-120), (centx+40, c1[1]-120), red, 1)
+        #                     cv2.putText(frame, "{} m".format(dist), (centx-45, c1[1]-130), font, 0.6, red, 1)
+        #
+        #                 if l_cnt or r_cnt or c_cnt:
+        #                     cnt = l_cnt + c_cnt + r_cnt
+        #
+        #     cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
+        #     cv2.putText(frame, 'L = {0} / F = {2} / R = {1}'.format(l_cnt, r_cnt, c_cnt), (10, 100), font, 0.7, white, font_size)
+        #
+        #     object_detection = cv2.add(frame, zero_frame)
+        #
+        #     lane_detection = cv2.addWeighted(object_detection, 1, lane_detection, 0.5, 0)
+        lane_detection = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
 
-            if CUDA:
-                frame_dim = frame_dim.cuda()
-                prep_frame = prep_frame.cuda()
-
-                with torch.no_grad():
-                    output = model(Variable(prep_frame, True), CUDA)
-                    output = write_results(output, confidence, num_classes, nms_thesh)
-
-                    frame_dim = frame_dim.repeat(output.size(0), 1)
-            # scaling_factor = torch.min(416/frame_dim, 1)[0].view(-1,   1)
-            scaling_factor = torch.min(resol/frame_dim, 1)[0].view(-1, 1)
-
-            output[:, [1, 3]] -= (input_dim - scaling_factor * frame_dim[:, 0].view(-1, 1))/2
-            output[:, [2, 4]] -= (input_dim - scaling_factor * frame_dim[:, 1].view(-1, 1))/2
-            output[:, 1:5] /= scaling_factor
-
-            for i in range(output.shape[0]):
-                output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, frame_dim[i,0])
-                output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, frame_dim[i,1])
-
-            zero_frame = np.zeros_like(frame) # Object frame zero copy
-            list(write(x, zero_frame) for x in output) # list(map(lambda x: write(x, frame), output))
-
-            crossx, crossy = lane_cross_point()
-            l_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (crossx, 0), (0, 0), (0, 720)])
-            r_poly = Polygon([(next_frame[6], next_frame[7]), (crossx, crossy), (crossx, 0), (1280, 0), (1280, 720)])
-            c_poly = Polygon([(next_frame[0], next_frame[1]), (crossx, crossy), (next_frame[6], next_frame[7])]) # Center Polygon
-
-            cnt = 0 # Car count
-            vals = [2, 3, 5, 7]
-            l_cnt, r_cnt, c_cnt = 0, 0, 0
-            for x in output:
-                c1 = tuple(x[1:3].int())
-                c2 = tuple(x[3:5].int())
-                centx = int((c1[0]+c2[0])/2)
-                centy = int((c1[1]+c2[1])/2)
-
-                carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
-                carcent = Point((centx, centy)) # Car Center point
-                carundcent = Point((centx, c2[1]))
-
-                """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
-                for val in vals:
-                    if int(x[-1]) == val:
-                        cnt += 1
-                        if l_poly.intersects(carcent):
-                            l_cnt += 1
-                        if r_poly.intersects(carcent):
-                            r_cnt += 1
-                        if c_poly.intersects(carcent):
-                            c_cnt += 1
-                            if c_cnt > 1 : c_cnt = 1
-
-                            # 앞 차량과의 거리계산
-                            pl = carundcent.distance(Point(whalf-5, 720))
-                            dist = (pl * 1.8 / (next_frame[6] - next_frame[2])) * 180/np.pi
-                            dist = round(map(dist, 20, 40, 10, 70), 2)
-
-                            cv2.line(frame, (centx, c1[1]), (centx, c1[1]-120), red, 1)
-                            cv2.line(frame, (centx-50, c1[1]-120), (centx+40, c1[1]-120), red, 1)
-                            cv2.putText(frame, "{} m".format(dist), (centx-45, c1[1]-130), font, 0.6, red, 1)
-
-                        if l_cnt or r_cnt or c_cnt:
-                            cnt = l_cnt + c_cnt + r_cnt
-
-            cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
-            cv2.putText(frame, 'L = {0} / F = {2} / R = {1}'.format(l_cnt, r_cnt, c_cnt), (10, 100), font, 0.7, white, font_size)
-
-            object_result = cv2.add(frame, zero_frame)
-            lane_result = cv2.addWeighted(object_result, 1, lane_detection, 0.5, 0)
-            # lane_result = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
-
-            # cv2.circle(lane_result, (next_frame[0], next_frame[1]), radius=3, color=red, thickness=-1)
-            # cv2.circle(lane_result, (next_frame[2], next_frame[3]), radius=3, color=blue, thickness=-1)
-            # cv2.circle(lane_result, (next_frame[4], next_frame[5]), radius=3, color=green, thickness=-1)
-            # cv2.circle(lane_result, (next_frame[6], next_frame[7]), radius=3, color=yellow, thickness=-1)
-
-            # cv2.imshow("Re", bird)
-            cv2.imshow("Result", lane_result)
+            # cv2.imshow("Result", lane_detection)
+        cv2.imshow("hough", lane_detection)
             # clip1.write(lane_result)
 
         frames += 1
