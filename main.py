@@ -49,6 +49,8 @@ uxhalf, uyhalf, dxhalf, dyhalf = 0, 0, 0, 0
 l_center, r_center, lane_center = ((0, 0)), ((0, 0)), ((0, 0))
 next_frame = (0, 0, 0, 0, 0, 0, 0, 0)
 control_flag = False
+COUNTER = 0
+TOTAL = 0
 
 def arg_parse():
     parses = argparse.ArgumentParser(description='My capstone Design 2019')
@@ -58,7 +60,6 @@ def arg_parse():
     parses.add_argument("--url", dest = 'url', default = False, type = str, help="youtube url link")
     parses.add_argument("--com", dest = 'com', default = False, help = "Setting Arduino port", type = str)
     parses.add_argument("--brate", dest = 'brate', default = 9600, help = "Setting Arduino baudrate")
-    parses.add_argument("--t", dest = 'threshold', default = 0.2, help = "Threshold to determine closed eye")
     return parses.parse_args()
 
 """
@@ -74,13 +75,6 @@ def save_video(filename, frame=60.0):
     out = cv2.VideoWriter(filename, fourcc, frame, (1280,720))
     return out
 
-""" Eye Detection Ratio """
-def eye_aspect_ratio(eye):
-	A = dist.euclidean(eye[1], eye[5])
-	B = dist.euclidean(eye[2], eye[4])
-	C = dist.euclidean(eye[0], eye[3])
-	ear = (A + B) / (2.0 * C)
-	return ear
 
 def grayscale(img):
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -463,7 +457,6 @@ names = "data/coco.names"
 video_directory = "test_videos/"
 video = video_directory + args.video
 
-EYE_AR_THRESH = args['threshold']
 # URL = "https://youtu.be/jieP4QkVze8"
 # URL = "https://youtu.be/YsPdvvixYfo" roi = 1
 url = args.url
@@ -491,12 +484,7 @@ model.load_weights(weights)
 print("[INFO]Reading classes file")
 classes = load_classes(names)
 set_requires_grad(model, False)
-print("\n[INFO]Network successfully loaded!")
-
-print("[INFO] loading facial landmark predictor...")
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor.dat")
-print("\n[INFO] Suceess!")
+print("[INFO]Network successfully loaded!")
 
 mcu_port = args.com
 mcu_brate = args.brate # Baud rate
@@ -525,12 +513,10 @@ if url:
     cap = cv2.VideoCapture(play.url)
 else: # python main.py --com COM4 --youtube
     cap = cv2.VideoCapture(video)
-cam = cv2.VideoCapture(0)
 print("\n[INFO]Video and Camera is now ready to show.")
 
 while (cap.isOpened()):
     ret, frame = cap.read()
-    ret1, frame1 = cam.read()
     if ret:
         # zerof = laneregion(frame)
         # show = cv2.addWeighted(frame, 1, zerof, 0.6, 0)
@@ -539,41 +525,12 @@ while (cap.isOpened()):
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame)
-
-        """-------------------------- Eye Detection -------------------------"""
-        global control_flag
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        for rect in detector(gray, 0):
-            shape = face_utils.shape_to_np(predictor(gray, rect))
-            leftEye = shape[lStart:lEnd]
-            leftEAR = eye_aspect_ratio(leftEye)
-            rightEye = shape[rStart:rEnd]
-            rightEAR = eye_aspect_ratio(rightEye)
-
-            ear = (leftEAR + rightEAR) / 2.0
-
-            cv2.drawContours(frame1, [cv2.convexHull(leftEye)], -1, (0, 255, 0), 1)
-            cv2.drawContours(frame1, [cv2.convexHull(rightEye)], -1, (0, 255, 0), 1)
-
-    		# Threshold만큼 눈이 감기면 Blink로 간주
-            if ear < EYE_AR_THRESH:
-                COUNTER += 1
-                if COUNTER > 100:
-                    cv2.putText(frame, "Driver is sleeping", (width-170, 80), font, 1, (0, 0, 255), 2)
-                    cv2.putText(frame, "Now Turn Autonomous Mode", (width-300, 100), font, 1, (0, 0, 255), 2)
-                    control_flag = True
-            else:
-                if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                    TOTAL += 1
-                    control_flag = False
-                COUNTER = 0
         """------------------------- Lane Detection -------------------------"""
         cpframe = frame.copy() # Lane frame copy
         prc_img, hough = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
-        """ Object Detection """
+        """------------------------ Object Detection ------------------------"""
         if frames %3 == 0: # Frame 높히기; 눈속임
             prep_frame = prep_image(frame, input_dim)
             frame_dim = frame.shape[1], frame.shape[0]
@@ -657,7 +614,7 @@ while (cap.isOpened()):
             cv2.putText(frame, 'vehicles counting : {}'.format(cnt), (10, 75), font, 0.8, white, 1)
             cv2.putText(frame, 'L = {0} / F = {2} / R = {1}'.format(l_cnt, r_cnt, c_cnt), (10, 100), font, 0.7, white, font_size)
 
-            """ Result """
+            """------------------------- Result -----------------------------"""
             object_detection = cv2.add(frame, zero_frame)
             lane_detection = cv2.addWeighted(object_detection, 1, lane_detection, 0.5, 0)
             cv2.imshow("Result", lane_detection)
