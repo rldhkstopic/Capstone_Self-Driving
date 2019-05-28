@@ -545,36 +545,29 @@ while (cap.isOpened()):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         for rect in detector(gray, 0):
-    		shape = face_utils.shape_to_np(predictor(gray, rect))
+            shape = face_utils.shape_to_np(predictor(gray, rect))
+            leftEye = shape[lStart:lEnd]
+            leftEAR = eye_aspect_ratio(leftEye)
+            rightEye = shape[rStart:rEnd]
+            rightEAR = eye_aspect_ratio(rightEye)
 
-    		leftEye = shape[lStart:lEnd]
-    		leftEAR = eye_aspect_ratio(leftEye)
-    		rightEye = shape[rStart:rEnd]
-    		rightEAR = eye_aspect_ratio(rightEye)
+            ear = (leftEAR + rightEAR) / 2.0
 
-    		ear = (leftEAR + rightEAR) / 2.0
-
-    		cv2.drawContours(frame1, [cv2.convexHull(leftEye)], -1, (0, 255, 0), 1)
-    		cv2.drawContours(frame1, [cv2.convexHull(rightEye)], -1, (0, 255, 0), 1)
+            cv2.drawContours(frame1, [cv2.convexHull(leftEye)], -1, (0, 255, 0), 1)
+            cv2.drawContours(frame1, [cv2.convexHull(rightEye)], -1, (0, 255, 0), 1)
 
     		# Threshold만큼 눈이 감기면 Blink로 간주
-    		if ear < EYE_AR_THRESH:
-    			COUNTER += 1
+            if ear < EYE_AR_THRESH:
+                COUNTER += 1
                 if COUNTER > 100:
                     cv2.putText(frame, "Driver is sleeping", (width-170, 80), font, 1, (0, 0, 255), 2)
                     cv2.putText(frame, "Now Turn Autonomous Mode", (width-300, 100), font, 1, (0, 0, 255), 2)
                     control_flag = True
             else:
-    			if COUNTER >= EYE_AR_CONSEC_FRAMES:
-    				TOTAL += 1
+                if COUNTER >= EYE_AR_CONSEC_FRAMES:
+                    TOTAL += 1
                     control_flag = False
-    			COUNTER = 0
-
-    		cv2.putText(frame1, "Blinks: {}".format(TOTAL), (10, 30),
-        		font, 0.7, (0, 0, 255), 2)
-    		cv2.putText(frame1, "EAR: {:.2f}".format(ear), (300, 30),
-        		font, 0.7, (0, 0, 255), 2)
-
+                COUNTER = 0
         """------------------------- Lane Detection -------------------------"""
         cpframe = frame.copy() # Lane frame copy
         prc_img, hough = process_image(cpframe)
