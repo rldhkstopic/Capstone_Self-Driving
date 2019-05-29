@@ -9,18 +9,12 @@ from shapely.geometry import Polygon, Point
 from moviepy.editor import VideoFileClip
 from scipy.misc import imresize
 from PIL import Image
-from scipy.spatial import distance as dist
-from imutils.video import VideoStream
-from imutils import face_utils
 
 import numpy as np
 import os
 import io
 import cv2
 import pafy
-import pickle
-import dlib
-import imutils
 import argparse
 import time
 import serial
@@ -108,7 +102,7 @@ def draw_lines(img, lines):
     global first_frame
     global next_frame
 
-    y_global_min = img.shape[0] # min은 y값 중 가장 큰값을 의미할 것이다. 또는 차로부터 멀어져 길을 따라 내려가는 지점 (?)
+    y_global_min = img.shape[0]
     y_max = img.shape[0]
 
     l_slope, r_slope = [], []
@@ -477,14 +471,14 @@ resol = 416 # 해상도
 whalf, height = 640, 720
 
 num_classes = 12
-print("[INFO]Reading configure file")
+print("[INFO] Reading configure file")
 model = Darknet(cfg)
-print("[INFO]Reading weights file")
+print("[INFO] Reading weights file")
 model.load_weights(weights)
-print("[INFO]Reading classes file")
+print("[INFO] Reading classes file")
 classes = load_classes(names)
 set_requires_grad(model, False)
-print("[INFO]Network successfully loaded!")
+print("[INFO] Network successfully loaded!")
 
 mcu_port = args.com
 mcu_brate = args.brate # Baud rate
@@ -497,7 +491,6 @@ input_dim = int(model.net_info["height"])
 assert input_dim % 32 == 0
 assert input_dim > 32
 
-# clip1 = save_video('out_videos/final_' + args.video, 12.0) # result 영상 저장
 """--------------------------Video test--------------------------------------"""
 torch.cuda.empty_cache()
 
@@ -513,8 +506,9 @@ if url:
     cap = cv2.VideoCapture(play.url)
 else: # python main.py --com COM4 --youtube
     cap = cv2.VideoCapture(video)
-print("\n[INFO]Video and Camera is now ready to show.")
+print("\n[INFO] Video and Camera is now ready to show.")
 
+# clip1 = save_video('out_videos/final_' + args.video, 12.0) # result 영상 저장
 while (cap.isOpened()):
     ret, frame = cap.read()
     if ret:
@@ -525,13 +519,14 @@ while (cap.isOpened()):
         cv2.rectangle(frame, (0,0), (300, 130), dark, -1)
         show_fps(frame, frames, start, color = yellow)
         warning_text(frame)
+
         """------------------------- Lane Detection -------------------------"""
         cpframe = frame.copy() # Lane frame copy
         prc_img, hough = process_image(cpframe)
         lane_detection = visualize(prc_img, args.roi)
 
         """------------------------ Object Detection ------------------------"""
-        if frames %3 == 0: # Frame 높히기; 눈속임
+        if frames %2 == 0: # Frame 높히기; 눈속임
             prep_frame = prep_image(frame, input_dim)
             frame_dim = frame.shape[1], frame.shape[0]
             frame_dim = torch.FloatTensor(frame_dim).repeat(1, 2)
@@ -577,6 +572,7 @@ while (cap.isOpened()):
                 carbox = Polygon([(c1[0], c1[0]), (c1[0], c1[1]), (c1[1], c1[1]), (c1[1], c1[0])])
                 carcent = Point((centx, centy)) # Car Center point
                 carundcent = Point((centx, c2[1]))
+                carupcent = Point((centx, c1[1]))
 
                 """ 차의 중앙 지점과 겹치는 곳이 있으면 그곳이 차의 위치 """
                 for val in vals:
@@ -618,7 +614,7 @@ while (cap.isOpened()):
             object_detection = cv2.add(frame, zero_frame)
             lane_detection = cv2.addWeighted(object_detection, 1, lane_detection, 0.5, 0)
             cv2.imshow("Result", lane_detection)
-            # clip1.write(lane_result)
+            # clip1.write(lane_detection)
 
         # lane_detection = cv2.addWeighted(frame, 1, lane_detection, 0.5, 0)
         # cv2.imshow("hough", lane_detection)
