@@ -326,8 +326,8 @@ def img_pipeline(img):
     global offset
 
     img = imresize(img, (720, 1280, 3))
-    undist = distort_correct(img, mtx, dist, camera_img_size)
-    binary_img = binary_pipeline(undist) # get binary image
+    # undist = distort_correct(img, mtx, dist, camera_img_size)
+    binary_img = binary_pipeline(i) # get binary image
     birdseye, inverse_perspective_transform = warp_image(binary_img, src_points) #perspective transform
 
     if window_search: # False
