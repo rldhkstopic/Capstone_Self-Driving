@@ -4,7 +4,7 @@
 "딥러닝과 영상처리를 이용한 자율주행 시스템 구현"을 주제로 2019년 2월부터 6월 10일까지 개발 및 연구했습니다. <br><br>
 
 19년도 1월 Python을 처음 배우고, 2월부터 CV, DeepLearning, YOLOv3 등 두루 공부를 하며 프로젝트를 진행했습니다. <br> 
-Lane Detection / Object Detection / YOLOv3 
+Lane Detection / Object Detection / YOLOv3 /
 
 
 <p>
